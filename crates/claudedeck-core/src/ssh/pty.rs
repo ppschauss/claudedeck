@@ -7,16 +7,23 @@
 //! daher parallel zum Reader-Task aufgerufen werden, ohne dass sich beide Seiten einen Mutex
 //! teilen müssten.
 
+use std::time::Duration;
+
 use russh::client;
 use russh::{ChannelMsg, ChannelWriteHalf};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use super::connection::ClientHandler;
 
 /// Kanalkapazität für den Output-Stream — wie im validierten Spike bewusst großzügig
 /// bemessen, damit PTY-Bursts (z.B. `clear` + Redraw) den SSH-Session-Task nicht blockieren.
 const OUTPUT_CHANNEL_CAPACITY: usize = 256;
+
+/// Wie lange [`PtyHandle::close`] nach dem Close-Request auf das Ende des Reader-Tasks wartet,
+/// bevor er per `abort()` hart beendet wird (z.B. wenn der Server nie CHANNEL_CLOSE beantwortet).
+const READER_TASK_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Ereignis aus dem PTY-Reader-Task.
 pub enum PtyEvent {
@@ -29,6 +36,7 @@ pub enum PtyEvent {
 pub struct PtyHandle {
     write_half: ChannelWriteHalf<client::Msg>,
     output_rx: Option<mpsc::Receiver<PtyEvent>>,
+    reader_task: JoinHandle<()>,
 }
 
 impl PtyHandle {
@@ -49,7 +57,7 @@ impl PtyHandle {
         let (mut read_half, write_half) = channel.split();
         let (tx, rx) = mpsc::channel(OUTPUT_CHANNEL_CAPACITY);
 
-        tokio::spawn(async move {
+        let reader_task = tokio::spawn(async move {
             let mut exit_code = None;
             while let Some(msg) = read_half.wait().await {
                 match msg {
@@ -68,6 +76,7 @@ impl PtyHandle {
         Ok(Self {
             write_half,
             output_rx: Some(rx),
+            reader_task,
         })
     }
 
@@ -92,8 +101,25 @@ impl PtyHandle {
             .expect("PtyHandle::take_output darf nur einmal aufgerufen werden")
     }
 
-    /// Schließt den Kanal. Der Reader-Task beendet sich danach von selbst (wait() -> None).
+    /// Schließt den Kanal. Der Reader-Task beendet sich im Normalfall danach von selbst
+    /// (`read_half.wait()` liefert `None`, sobald die Gegenseite CHANNEL_CLOSE beantwortet).
+    /// Um das nicht dem Zufall zu überlassen — ein Server, der nie antwortet, würde den Task
+    /// sonst für immer laufen lassen (Leak) — wird hier bis zu [`READER_TASK_CLOSE_TIMEOUT`]
+    /// auf das Task-Ende gewartet; danach wird der Task hart per `abort()` beendet.
     pub async fn close(self) -> Result<(), russh::Error> {
-        self.write_half.close().await
+        let result = self.write_half.close().await;
+        // AbortHandle vorab sichern: `timeout()` konsumiert das JoinHandle als Future, und ein
+        // simples Drop der Future (bei Timeout) würde den Task NICHT beenden (nur ein explizites
+        // `abort()` tut das) — daher der separate AbortHandle statt sich auf Drop zu verlassen.
+        let abort_handle = self.reader_task.abort_handle();
+        if tokio::time::timeout(READER_TASK_CLOSE_TIMEOUT, self.reader_task)
+            .await
+            .is_err()
+        {
+            // Timeout: Reader-Task lebt noch (Server hat nie CHANNEL_CLOSE beantwortet) — hart
+            // beenden statt ihn leaken zu lassen.
+            abort_handle.abort();
+        }
+        result
     }
 }

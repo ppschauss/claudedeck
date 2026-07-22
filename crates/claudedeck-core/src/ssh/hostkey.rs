@@ -21,9 +21,24 @@ pub fn check(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> Host
     let query_key = PublicKey::from(key.key_data().clone());
     match russh::keys::check_known_hosts_path(host, port, &query_key, known_hosts) {
         Ok(true) => HostkeyStatus::Known,
-        Ok(false) => HostkeyStatus::Unknown {
-            fingerprint: fingerprint_sha256(key),
-        },
+        // russh only returns Err(KeyChanged) when it finds an entry for this host with the
+        // SAME key type but a DIFFERENT key. If the server now presents a different key TYPE
+        // (e.g. RSA where known_hosts has ed25519), no entry of that type matches, so russh
+        // reports Ok(false) — indistinguishable, on its own, from a genuinely new host. Under
+        // HostkeyPolicy::AcceptNew that would silently accept a MITM using a different
+        // algorithm. So on Ok(false) we independently check known_hosts for ANY entry for this
+        // host (any key type) — if one exists, treat it as Changed, not Unknown.
+        Ok(false) => {
+            if host_has_any_entry(known_hosts, host, port) {
+                HostkeyStatus::Changed {
+                    fingerprint: fingerprint_sha256(key),
+                }
+            } else {
+                HostkeyStatus::Unknown {
+                    fingerprint: fingerprint_sha256(key),
+                }
+            }
+        }
         Err(russh::keys::Error::KeyChanged { .. }) => HostkeyStatus::Changed {
             fingerprint: fingerprint_sha256(key),
         },
@@ -31,6 +46,51 @@ pub fn check(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> Host
             fingerprint: fingerprint_sha256(key),
         },
     }
+}
+
+/// Prüft, ob `known_hosts` für `host`/`port` IRGENDEINEN Eintrag enthält — unabhängig vom
+/// Key-Typ. Wird genutzt, um einen Algorithmus-Wechsel (anderer Key-Typ als hinterlegt) von
+/// einem echten neuen Host zu unterscheiden (siehe `check`).
+///
+/// Erkennt: führendes Whitespace, Kommentarzeilen (`#`), komma-separierte Hostlisten
+/// (`a.local,b.local ssh-ed25519 ...`) und die Port-Klammer-Notation (`[host]:port`).
+///
+/// Gehashte Einträge (`|1|<salt>|<hash> ...`, `HashKnownHosts yes`) werden bewusst NICHT
+/// aufgelöst — der Host-Name steckt dort nur als HMAC-SHA1-Hash, ein Klartextvergleich ist
+/// unmöglich. Ein Algorithmus-Wechsel gegen einen gehashten Host würde also weiterhin als
+/// Unknown statt Changed erkannt; das ist eine bekannte Lücke dieses Fixes, kein Rückschritt
+/// ggü. vorher (vorher war *jeder* Algorithmus-Wechsel betroffen, jetzt nur der gehashte Fall).
+fn host_has_any_entry(known_hosts: &Path, host: &str, port: u16) -> bool {
+    let content = match std::fs::read_to_string(known_hosts) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let bracket_host = format!("[{host}]:{port}");
+    for line in content.lines() {
+        let line = line.trim_start();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(hosts_field) = line.split_whitespace().next() else {
+            continue;
+        };
+        // Gehashte Einträge (|1|...) können wir ohne den known_hosts-HMAC-Schlüssel nicht
+        // auflösen — bewusst überspringen (siehe Doc-Kommentar oben).
+        if hosts_field.starts_with("|1|") {
+            continue;
+        }
+        let matches = hosts_field.split(',').any(|h| {
+            if port == 22 {
+                h == host
+            } else {
+                h == bracket_host
+            }
+        });
+        if matches {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn append(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> std::io::Result<()> {
@@ -59,6 +119,10 @@ mod tests {
     // Zwei echte, feste Ed25519-Testschlüssel (nur Testdaten, keine Secrets):
     const KEY_A: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIGb0eNSXSGcE8YG5RuRhZs2NM4Z2zAtxKT9d6sPCLsdE";
     const KEY_B: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIODJol6WSDGaX8DJHfF9O5B84vLdU21LMc0dGE0hMh8I";
+    // Echter RSA-2048-Testschlüssel (nur Testdaten, keine Secrets), generiert via
+    // `ssh-keygen -t rsa -b 2048` im Dev-Container — dient nur zum Nachweis, dass ein
+    // Algorithmus-Wechsel (RSA in known_hosts, Ed25519 in der Query) als Changed erkannt wird.
+    const RSA_KEY_A: &str = "AAAAB3NzaC1yc2EAAAADAQABAAABAQC3EGcgKqU4V5wzLFlku5W2cwieVleY5QjzKeGsw5aGRONqx5AMLPc0HwiFNio21Fol8ZRT9wJQMqDDwEIlh55qyMzp1II8NY9BxS8J8pvmAfj71FGQdhPpQUhU5GJ9N9c1pFWUfeJF7MVm5ZeDBe6hwY7N+ABH3EgagwUvxuY1RrLlNKT4yIRcqGQNJbcKjZzXTIgCa/mfzdDUCVwFvmtKK34WfvTbPAksgoCXEqR25lhzG8Tf2QRvb11XQc2S/e8tS5ztAT9F4R3I3Uf+2Ps3GsgbsDSEqCrXRBSjt3WyWUZSuXuAywF6uVz+Ci1vYa2kkjp2oJpMnItNZklWpV17";
 
     fn pk(b64: &str) -> russh::keys::PublicKey {
         russh::keys::PublicKey::from_openssh(&format!("ssh-ed25519 {b64} test")).unwrap()
@@ -117,6 +181,21 @@ mod tests {
         );
         let content = std::fs::read_to_string(f.path()).unwrap();
         assert!(content.contains("[neu.local]:2222 ssh-ed25519 "));
+    }
+
+    #[test]
+    fn anderer_key_typ_ist_changed() {
+        // known_hosts hat für isekai.local einen RSA-Eintrag hinterlegt; die Query kommt mit
+        // einem Ed25519-Key (KEY_A) für denselben Host. russh's check_known_hosts_path liefert
+        // hier Ok(false) (kein Eintrag *dieses* Typs matcht), was ohne den Fix fälschlich als
+        // Unknown durchgeht — unter AcceptNew würde ein Algorithmus-Wechsel-MITM so unbemerkt
+        // als "neuer Host" akzeptiert. Da known_hosts aber sehr wohl einen Eintrag für den Host
+        // hat (nur mit anderem Key-Typ), muss das Ergebnis Changed sein.
+        let f = kh(&format!("isekai.local ssh-rsa {RSA_KEY_A}\n"));
+        match check(f.path(), "isekai.local", 22, &pk(KEY_A)) {
+            HostkeyStatus::Changed { .. } => {}
+            other => panic!("erwartet Changed, war {other:?}"),
+        }
     }
 
     #[test]
