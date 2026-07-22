@@ -29,7 +29,7 @@ pub fn check(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> Host
         // algorithm. So on Ok(false) we independently check known_hosts for ANY entry for this
         // host (any key type) — if one exists, treat it as Changed, not Unknown.
         Ok(false) => {
-            if host_has_any_entry(known_hosts, host, port) {
+            if host_has_any_entry(host, port, known_hosts) {
                 HostkeyStatus::Changed {
                     fingerprint: fingerprint_sha256(key),
                 }
@@ -52,45 +52,15 @@ pub fn check(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> Host
 /// Key-Typ. Wird genutzt, um einen Algorithmus-Wechsel (anderer Key-Typ als hinterlegt) von
 /// einem echten neuen Host zu unterscheiden (siehe `check`).
 ///
-/// Erkennt: führendes Whitespace, Kommentarzeilen (`#`), komma-separierte Hostlisten
-/// (`a.local,b.local ssh-ed25519 ...`) und die Port-Klammer-Notation (`[host]:port`).
-///
-/// Gehashte Einträge (`|1|<salt>|<hash> ...`, `HashKnownHosts yes`) werden bewusst NICHT
-/// aufgelöst — der Host-Name steckt dort nur als HMAC-SHA1-Hash, ein Klartextvergleich ist
-/// unmöglich. Ein Algorithmus-Wechsel gegen einen gehashten Host würde also weiterhin als
-/// Unknown statt Changed erkannt; das ist eine bekannte Lücke dieses Fixes, kein Rückschritt
-/// ggü. vorher (vorher war *jeder* Algorithmus-Wechsel betroffen, jetzt nur der gehashte Fall).
-fn host_has_any_entry(known_hosts: &Path, host: &str, port: u16) -> bool {
-    let content = match std::fs::read_to_string(known_hosts) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let bracket_host = format!("[{host}]:{port}");
-    for line in content.lines() {
-        let line = line.trim_start();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some(hosts_field) = line.split_whitespace().next() else {
-            continue;
-        };
-        // Gehashte Einträge (|1|...) können wir ohne den known_hosts-HMAC-Schlüssel nicht
-        // auflösen — bewusst überspringen (siehe Doc-Kommentar oben).
-        if hosts_field.starts_with("|1|") {
-            continue;
-        }
-        let matches = hosts_field.split(',').any(|h| {
-            if port == 22 {
-                h == host
-            } else {
-                h == bracket_host
-            }
-        });
-        if matches {
-            return true;
-        }
-    }
-    false
+/// Delegiert an russhs eigene, bereits getestete `known_host_keys_path`-Matching-Logik (führendes
+/// Whitespace, Kommentarzeilen, komma-separierte Hostlisten, `[host]:port`-Klammernotation UND
+/// gehashte Einträge `|1|<salt>|<hash> ...` — die per HMAC-SHA1 gegen `host:port` aufgelöst
+/// werden, siehe `russh::keys::known_hosts::match_hostname`). Damit werden auch gehashte
+/// Einträge (Debian/Ubuntu-Default `HashKnownHosts yes`) korrekt erkannt.
+fn host_has_any_entry(host: &str, port: u16, known_hosts: &Path) -> bool {
+    russh::keys::known_hosts::known_host_keys_path(host, port, known_hosts)
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
 }
 
 pub fn append(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> std::io::Result<()> {
@@ -192,6 +162,25 @@ mod tests {
         // als "neuer Host" akzeptiert. Da known_hosts aber sehr wohl einen Eintrag für den Host
         // hat (nur mit anderem Key-Typ), muss das Ergebnis Changed sein.
         let f = kh(&format!("isekai.local ssh-rsa {RSA_KEY_A}\n"));
+        match check(f.path(), "isekai.local", 22, &pk(KEY_A)) {
+            HostkeyStatus::Changed { .. } => {}
+            other => panic!("erwartet Changed, war {other:?}"),
+        }
+    }
+
+    #[test]
+    fn gehashter_eintrag_mit_anderem_key_typ_ist_changed() {
+        // known_hosts hat für isekai.local einen GEHASHTEN (`|1|<salt>|<hash>`, wie es
+        // Debian/Ubuntu per HashKnownHosts-Default erzeugt) RSA-Eintrag hinterlegt; die Query
+        // kommt mit dem Ed25519-Key KEY_A für denselben Host. Die gehashte Zeile ist deterministisch
+        // vorgeneriert (kein Laufzeit-ssh-keygen im Test) via:
+        //   `ssh-keygen -H -f <datei mit Klartextzeile "isekai.local ssh-rsa {RSA_KEY_A}">`
+        // Erwartung: wie beim Klartext-Fall (anderer_key_typ_ist_changed) muss das Ergebnis
+        // Changed sein, nicht Unknown — sonst bliebe ein Algorithmus-Wechsel-MITM unter
+        // HostkeyPolicy::AcceptNew unerkannt, sobald known_hosts gehasht ist.
+        let f = kh(&format!(
+            "|1|AXF7D6hwxHqIWTtHK3yPGyId6Vs=|AQU9Xh+vduAeEJmFHvUIfXJCUjw= ssh-rsa {RSA_KEY_A}\n"
+        ));
         match check(f.path(), "isekai.local", 22, &pk(KEY_A)) {
             HostkeyStatus::Changed { .. } => {}
             other => panic!("erwartet Changed, war {other:?}"),
