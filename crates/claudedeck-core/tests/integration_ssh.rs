@@ -52,7 +52,7 @@ async fn tmux_roundtrip_liste_und_parser() {
         .await
         .unwrap();
     let ls = conn
-        .exec_capture(commands::cmd_list_sessions())
+        .exec_capture(&commands::cmd_list_sessions())
         .await
         .unwrap();
     let sessions = parser::parse_sessions(&ls.stdout);

@@ -16,12 +16,32 @@ pub fn shell_quote(s: &str) -> String {
     out
 }
 
-pub fn cmd_list_sessions() -> &'static str {
-    "tmux list-sessions -F '#{session_name}\t#{session_created}\t#{session_attached}' 2>/dev/null || true"
+/// Feldtrenner für tmux `-F`-Formatstrings. Ein echter Tab wird von tmux in der
+/// Listen-Ausgabe zu `_` sanitisiert (verifiziert unter tmux 3.3a und 3.5a); auch das
+/// druckbare Unicode-Zeichen `␞` (U+241E) wird auf einer SSH-Exec-Session ohne
+/// Locale-Forwarding (vermutlich `C`/`POSIX`-Locale) genauso zu einem einzelnen `_`
+/// zusammengefasst — empirisch mit Hex-Dump gegen Isekai (tmux, echte SSH-Exec-Session)
+/// verifiziert. Ein reines ASCII-Druckzeichen ist locale-unabhängig sicher: `|` kommt in
+/// `session_id`/Zahlenfeldern nie vor; wo es in freien Feldern (Name, Pfad) auftreten
+/// könnte, steht das Feld an letzter Stelle und wird mit `splitn` ungeteilt gelassen.
+pub const FIELD_SEP: char = '|';
+
+/// `session_id` (`#{session_id}`, z. B. `$3`) zuerst — separatorfrei, stabiler Anker für
+/// `splitn`. Die Zahlenfelder folgen fest, der beliebige `session_name` steht LAST, damit
+/// ein `|` darin den Parser nicht verwirrt (`splitn` lässt das letzte Feld ungeteilt).
+pub fn cmd_list_sessions() -> String {
+    format!(
+        "tmux list-sessions -F '#{{session_id}}{FIELD_SEP}#{{session_created}}{FIELD_SEP}#{{session_attached}}{FIELD_SEP}#{{session_name}}' 2>/dev/null || true"
+    )
 }
 
-pub fn cmd_list_panes() -> &'static str {
-    "tmux list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_current_path}' 2>/dev/null || true"
+/// `session_id` zuerst (Matching-Anker statt Namensvergleich), `pane_current_command`
+/// (comm-Name, max. 15 Zeichen, praktisch nie mit `|`) in der Mitte, `pane_current_path`
+/// (beliebig) LAST.
+pub fn cmd_list_panes() -> String {
+    format!(
+        "tmux list-panes -a -F '#{{session_id}}{FIELD_SEP}#{{pane_current_command}}{FIELD_SEP}#{{pane_current_path}}' 2>/dev/null || true"
+    )
 }
 
 pub fn cmd_new_detached(name: &str, cwd: &str, command: &str) -> String {
@@ -107,6 +127,23 @@ mod tests {
         assert_eq!(
             cmd_pane_cwd("cc-x"),
             "tmux display -p -t '=cc-x' '#{pane_current_path}'"
+        );
+    }
+
+    #[test]
+    fn list_sessions_nutzt_ascii_pipe_und_id_zuerst_name_last() {
+        assert_eq!(FIELD_SEP, '|');
+        assert_eq!(
+            cmd_list_sessions(),
+            "tmux list-sessions -F '#{session_id}|#{session_created}|#{session_attached}|#{session_name}' 2>/dev/null || true"
+        );
+    }
+
+    #[test]
+    fn list_panes_nutzt_ascii_pipe_und_id_zuerst_pfad_last() {
+        assert_eq!(
+            cmd_list_panes(),
+            "tmux list-panes -a -F '#{session_id}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null || true"
         );
     }
 
