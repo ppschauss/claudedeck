@@ -5,7 +5,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$DIR/.cargo-cache/registry" "$DIR/.cargo-cache/git" "$DIR/.cargo-cache/target"
 docker image inspect claudedeck-dev >/dev/null 2>&1 || \
-  docker build -q -t claudedeck-dev -f "$DIR/Dockerfile.dev" "$DIR"
+  docker build -q -t claudedeck-dev - < "$DIR/Dockerfile.dev"
 TTY_FLAG=""
 if [ -t 0 ]; then
   TTY_FLAG="-t"
