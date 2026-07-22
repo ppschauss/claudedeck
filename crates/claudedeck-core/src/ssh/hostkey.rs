@@ -81,22 +81,33 @@ pub fn append(known_hosts: &Path, host: &str, port: u16, key: &PublicKey) -> std
     Ok(())
 }
 
+/// Test-Fixtures (feste Testschlüssel + Helper), `pub(crate)` damit sie außerhalb dieses Moduls
+/// mitgenutzt werden können — insb. von `connection.rs`s Host-Key-Policy-Matrix-Tests, die
+/// dieselben festen Schlüssel für Known/Unknown/Changed-Szenarien brauchen.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
+pub(crate) mod fixtures {
+    use russh::keys::PublicKey;
 
     // Zwei echte, feste Ed25519-Testschlüssel (nur Testdaten, keine Secrets):
-    const KEY_A: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIGb0eNSXSGcE8YG5RuRhZs2NM4Z2zAtxKT9d6sPCLsdE";
-    const KEY_B: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIODJol6WSDGaX8DJHfF9O5B84vLdU21LMc0dGE0hMh8I";
+    pub(crate) const KEY_A: &str =
+        "AAAAC3NzaC1lZDI1NTE5AAAAIGb0eNSXSGcE8YG5RuRhZs2NM4Z2zAtxKT9d6sPCLsdE";
+    pub(crate) const KEY_B: &str =
+        "AAAAC3NzaC1lZDI1NTE5AAAAIODJol6WSDGaX8DJHfF9O5B84vLdU21LMc0dGE0hMh8I";
     // Echter RSA-2048-Testschlüssel (nur Testdaten, keine Secrets), generiert via
     // `ssh-keygen -t rsa -b 2048` im Dev-Container — dient nur zum Nachweis, dass ein
     // Algorithmus-Wechsel (RSA in known_hosts, Ed25519 in der Query) als Changed erkannt wird.
-    const RSA_KEY_A: &str = "AAAAB3NzaC1yc2EAAAADAQABAAABAQC3EGcgKqU4V5wzLFlku5W2cwieVleY5QjzKeGsw5aGRONqx5AMLPc0HwiFNio21Fol8ZRT9wJQMqDDwEIlh55qyMzp1II8NY9BxS8J8pvmAfj71FGQdhPpQUhU5GJ9N9c1pFWUfeJF7MVm5ZeDBe6hwY7N+ABH3EgagwUvxuY1RrLlNKT4yIRcqGQNJbcKjZzXTIgCa/mfzdDUCVwFvmtKK34WfvTbPAksgoCXEqR25lhzG8Tf2QRvb11XQc2S/e8tS5ztAT9F4R3I3Uf+2Ps3GsgbsDSEqCrXRBSjt3WyWUZSuXuAywF6uVz+Ci1vYa2kkjp2oJpMnItNZklWpV17";
+    pub(crate) const RSA_KEY_A: &str = "AAAAB3NzaC1yc2EAAAADAQABAAABAQC3EGcgKqU4V5wzLFlku5W2cwieVleY5QjzKeGsw5aGRONqx5AMLPc0HwiFNio21Fol8ZRT9wJQMqDDwEIlh55qyMzp1II8NY9BxS8J8pvmAfj71FGQdhPpQUhU5GJ9N9c1pFWUfeJF7MVm5ZeDBe6hwY7N+ABH3EgagwUvxuY1RrLlNKT4yIRcqGQNJbcKjZzXTIgCa/mfzdDUCVwFvmtKK34WfvTbPAksgoCXEqR25lhzG8Tf2QRvb11XQc2S/e8tS5ztAT9F4R3I3Uf+2Ps3GsgbsDSEqCrXRBSjt3WyWUZSuXuAywF6uVz+Ci1vYa2kkjp2oJpMnItNZklWpV17";
 
-    fn pk(b64: &str) -> russh::keys::PublicKey {
-        russh::keys::PublicKey::from_openssh(&format!("ssh-ed25519 {b64} test")).unwrap()
+    pub(crate) fn pk(b64: &str) -> PublicKey {
+        PublicKey::from_openssh(&format!("ssh-ed25519 {b64} test")).unwrap()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixtures::{pk, KEY_A, KEY_B, RSA_KEY_A};
+    use super::*;
+    use std::io::Write;
 
     fn kh(content: &str) -> tempfile::NamedTempFile {
         let mut f = tempfile::NamedTempFile::new().unwrap();

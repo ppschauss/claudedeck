@@ -158,7 +158,10 @@ async fn resize_aendert_tmux_fensterbreite() {
     // (verifiziert gegen echten tmux 3.3a und 3.5a) — mit explizitem Fensterindex ':0' liefert
     // dieselbe Exakt-Match-Syntax den erwarteten Wert.
     let w = conn
-        .exec_capture("tmux display -p -t '=cc-inttest:0' '#{window_width}'")
+        .exec_capture(&format!(
+            "tmux display -p -t {} '#{{window_width}}'",
+            commands::shell_quote(&format!("={S}:0"))
+        ))
         .await
         .unwrap();
     assert_eq!(w.stdout.trim(), "123");

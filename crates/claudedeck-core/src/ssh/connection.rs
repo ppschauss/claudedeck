@@ -167,3 +167,173 @@ fn translate_hostkey_error(
         _ => ConnectError::Ssh(err),
     }
 }
+
+/// Matrix-Tests für `ClientHandler::check_server_key`: alle 9 Kombinationen aus
+/// `HostkeyStatus` (Known/Unknown/Changed) × `HostkeyPolicy` (Strict/AcceptNew/
+/// InsecureAcceptAll). Konstruiert `ClientHandler` direkt (private Felder sind aus einem
+/// Kind-Modul dieser Datei erreichbar) mit einer tempfile-known_hosts und den festen
+/// Ed25519-Testschlüsseln aus `hostkey::fixtures`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ssh::hostkey::fixtures::{pk, KEY_A, KEY_B};
+    use russh::client::Handler as _;
+
+    const HOST: &str = "policy-test.local";
+
+    fn empty_known_hosts() -> tempfile::NamedTempFile {
+        tempfile::NamedTempFile::new().unwrap()
+    }
+
+    /// known_hosts-Datei mit einem vorab per `hostkey::append` eingetragenen Key für `HOST`.
+    fn known_hosts_with(key_b64: &str) -> tempfile::NamedTempFile {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        hostkey::append(f.path(), HOST, 22, &pk(key_b64)).unwrap();
+        f
+    }
+
+    fn handler(
+        known_hosts: &std::path::Path,
+        policy: HostkeyPolicy,
+    ) -> (ClientHandler, Arc<Mutex<Option<HostkeyStatus>>>) {
+        let remembered: Arc<Mutex<Option<HostkeyStatus>>> = Arc::new(Mutex::new(None));
+        let h = ClientHandler {
+            known_hosts: known_hosts.to_path_buf(),
+            host: HOST.to_string(),
+            port: 22,
+            policy,
+            remembered: remembered.clone(),
+        };
+        (h, remembered)
+    }
+
+    fn file_contents(f: &tempfile::NamedTempFile) -> String {
+        std::fs::read_to_string(f.path()).unwrap()
+    }
+
+    fn take_remembered(slot: &Arc<Mutex<Option<HostkeyStatus>>>) -> Option<HostkeyStatus> {
+        slot.lock().unwrap().take()
+    }
+
+    // --- Known × {Strict, AcceptNew, InsecureAcceptAll}: immer accept, nichts gemerkt, keine
+    //     erneute Änderung an known_hosts (Key steht schon drin). ---
+
+    #[tokio::test]
+    async fn known_strict_akzeptiert_ohne_merken_oder_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::Strict);
+        assert!(h.check_server_key(&pk(KEY_A)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert_eq!(file_contents(&f), before);
+    }
+
+    #[tokio::test]
+    async fn known_acceptnew_akzeptiert_ohne_merken_oder_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::AcceptNew);
+        assert!(h.check_server_key(&pk(KEY_A)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert_eq!(file_contents(&f), before);
+    }
+
+    #[tokio::test]
+    async fn known_insecure_akzeptiert_ohne_merken_oder_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::InsecureAcceptAll);
+        assert!(h.check_server_key(&pk(KEY_A)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert_eq!(file_contents(&f), before);
+    }
+
+    // --- Unknown × Strict: reject, Status gemerkt, KEIN Append. ---
+
+    #[tokio::test]
+    async fn unknown_strict_lehnt_ab_merkt_status_ohne_append() {
+        let f = empty_known_hosts();
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::Strict);
+        assert!(!h.check_server_key(&pk(KEY_A)).await.unwrap());
+        match take_remembered(&remembered) {
+            Some(HostkeyStatus::Unknown { .. }) => {}
+            other => panic!("erwartet gemerktes Unknown, war {other:?}"),
+        }
+        assert_eq!(
+            file_contents(&f),
+            "",
+            "Strict darf bei Unknown nicht appenden"
+        );
+    }
+
+    // --- Unknown × AcceptNew: accept, append, nichts gemerkt (kein Reject-Pfad). ---
+
+    #[tokio::test]
+    async fn unknown_acceptnew_akzeptiert_und_appendet() {
+        let f = empty_known_hosts();
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::AcceptNew);
+        assert!(h.check_server_key(&pk(KEY_A)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert!(
+            file_contents(&f).contains(HOST),
+            "erwartet Append für neuen Host"
+        );
+    }
+
+    // --- Unknown × InsecureAcceptAll: accept, append. ---
+
+    #[tokio::test]
+    async fn unknown_insecure_akzeptiert_und_appendet() {
+        let f = empty_known_hosts();
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::InsecureAcceptAll);
+        assert!(h.check_server_key(&pk(KEY_A)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert!(
+            file_contents(&f).contains(HOST),
+            "erwartet Append für neuen Host"
+        );
+    }
+
+    // --- Changed × Strict: reject, Status gemerkt, KEIN Append. ---
+
+    #[tokio::test]
+    async fn changed_strict_lehnt_ab_merkt_status_ohne_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::Strict);
+        assert!(!h.check_server_key(&pk(KEY_B)).await.unwrap());
+        match take_remembered(&remembered) {
+            Some(HostkeyStatus::Changed { .. }) => {}
+            other => panic!("erwartet gemerktes Changed, war {other:?}"),
+        }
+        assert_eq!(file_contents(&f), before, "Changed darf nie appenden");
+    }
+
+    // --- Changed × AcceptNew: reject, Status gemerkt, KEIN Append (AcceptNew gilt nur für
+    //     neue Hosts, nicht für einen bereits abweichenden Key). ---
+
+    #[tokio::test]
+    async fn changed_acceptnew_lehnt_ab_merkt_status_ohne_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::AcceptNew);
+        assert!(!h.check_server_key(&pk(KEY_B)).await.unwrap());
+        match take_remembered(&remembered) {
+            Some(HostkeyStatus::Changed { .. }) => {}
+            other => panic!("erwartet gemerktes Changed, war {other:?}"),
+        }
+        assert_eq!(file_contents(&f), before, "Changed darf nie appenden");
+    }
+
+    // --- Changed × InsecureAcceptAll: accept, KEIN Append, nichts gemerkt (kein Reject-Pfad). ---
+
+    #[tokio::test]
+    async fn changed_insecure_akzeptiert_ohne_append() {
+        let f = known_hosts_with(KEY_A);
+        let before = file_contents(&f);
+        let (mut h, remembered) = handler(f.path(), HostkeyPolicy::InsecureAcceptAll);
+        assert!(h.check_server_key(&pk(KEY_B)).await.unwrap());
+        assert!(take_remembered(&remembered).is_none());
+        assert_eq!(file_contents(&f), before, "Changed darf nie appenden");
+    }
+}
