@@ -8,6 +8,9 @@ russh = "=0.62.3"
 russh-sftp = "2.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "sync", "time", "signal", "fs"] }
 thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
 
 [dev-dependencies]
 crossterm = "0.29"

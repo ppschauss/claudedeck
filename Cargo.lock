@@ -534,8 +534,11 @@ name = "claudedeck-core"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "dirs",
  "russh",
  "russh-sftp",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.19",
  "tokio",
