@@ -105,7 +105,7 @@ async fn script_mode(handle: &Handle) -> Result<(), Box<dyn std::error::Error>> 
         while let Some(msg) = channel.wait().await {
             if let ChannelMsg::Data { ref data } = msg {
                 seen.extend_from_slice(data);
-                // Marker muss als Echo-OUTPUT auftauchen (Zeilenanfang), nicht nur als Tipp-Echo
+                // Marker muss 2× auftauchen: einmal als Tipp-Echo, einmal als echter echo-Output
                 if String::from_utf8_lossy(&seen).matches(marker).count() >= 2 {
                     return true;
                 }
