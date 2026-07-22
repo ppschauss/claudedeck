@@ -11,3 +11,4 @@ thiserror = "2"
 
 [dev-dependencies]
 crossterm = "0.29"
+tempfile = "3"
