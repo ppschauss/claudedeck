@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/claudedeck-core"]
+default-members = ["crates/claudedeck-core"]
+resolver = "2"

@@ -1,0 +1,13 @@
+[package]
+name = "claudedeck-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+russh = "=0.62.3"
+russh-sftp = "2.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "sync", "time", "signal", "fs"] }
+thiserror = "2"
+
+[dev-dependencies]
+crossterm = "0.29"
