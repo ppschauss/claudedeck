@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/claudedeck-core"]
+members = ["crates/claudedeck-core", "src-tauri"]
 default-members = ["crates/claudedeck-core"]
 resolver = "2"
