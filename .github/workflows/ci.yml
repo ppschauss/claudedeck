@@ -27,3 +27,32 @@ jobs:
       - run: npx tsc -b
       - run: npx vitest run
       - run: npm run build
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      sshd:
+        image: lscr.io/linuxserver/openssh-server:latest
+        env:
+          PASSWORD_ACCESS: "true"
+          USER_NAME: testuser
+          USER_PASSWORD: testpass
+          DOCKER_MODS: linuxserver/mods:universal-package-install
+          INSTALL_PACKAGES: tmux
+        ports:
+          - 2222:2222
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Auf sshd + tmux warten (Package-Mod braucht Startzeit)
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          for i in $(seq 1 45); do
+            if sshpass -p testpass ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 -p 2222 testuser@localhost 'command -v tmux' >/dev/null 2>&1; then
+              echo "bereit nach $((i*2))s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "sshd/tmux nicht bereit nach 90s"; exit 1
+      - run: CLAUDEDECK_TEST_SSH=localhost:2222:testuser:testpass cargo test -p claudedeck-core --test integration_ssh -- --ignored
