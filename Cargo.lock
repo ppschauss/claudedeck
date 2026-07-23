@@ -106,6 +106,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "claudedeck-core",
+ "dirs",
  "log",
  "serde",
  "serde_json",
@@ -113,6 +114,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-log",
  "tauri-plugin-notification",
+ "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]

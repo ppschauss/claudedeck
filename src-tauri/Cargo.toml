@@ -20,8 +20,11 @@ tauri-build = { version = "2.6.3" }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+thiserror = "2"
 log = "0.4"
 tauri = { version = "2.11.3" }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 claudedeck-core = { path = "../crates/claudedeck-core" }
+tokio = { version = "1", features = ["sync"] }
+dirs = "6"
