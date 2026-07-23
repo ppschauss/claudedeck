@@ -222,7 +222,7 @@ async fn run_recovery(app: &AppHandle) {
             break;
         }
 
-        match do_connect_core(app, &state, None, HostkeyPolicy::Strict).await {
+        match do_connect_core(app, &state, None, HostkeyPolicy::Strict, true).await {
             Ok(()) => break,
             Err(ApiError::AuthFailed { .. }) => {
                 // Global Constraint: nach AuthFailed nie automatisch weiterversuchen.

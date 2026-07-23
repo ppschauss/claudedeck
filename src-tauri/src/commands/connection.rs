@@ -119,11 +119,25 @@ fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Au
 /// Reconnect-Versuchen des Supervisors (`reconnect_supervisor::run_recovery`) — siehe
 /// Moduldoku, Abschnitt "Auflage A", für die Reentrancy-Guard-Begründung. `pub(crate)`, damit
 /// `reconnect_supervisor.rs` denselben Pfad nutzt statt Connect-Logik zu duplizieren.
+///
+/// `opportunistic`: `false` für die beiden Nutzer-Commands (`connect`/
+/// `accept_hostkey_and_connect`) — dort GILT die Reentrancy-Wipe-Semantik uneingeschränkt
+/// (Auflage A). `true` NUR für die automatischen Versuche des Supervisors: die warten vorher
+/// interruptible auf `connect_lock` (über den manuellen Retry-Pfad kann in der Zwischenzeit
+/// ein `connect()`-Aufruf bereits erfolgreich durchgelaufen sein, während der Supervisor noch
+/// auf den Lock wartete). Ein `opportunistic`-Aufruf, der `connect_lock` bekommt und dann
+/// `conn.is_some()` vorfindet, wertet das als "jemand anderes hat es bereits geschafft" und
+/// kehrt sofort mit `Ok(())` zurück, STATT die frisch aufgebaute (ggf. bereits re-attachte)
+/// Verbindung wieder wegzuwerfen und ein zweites Mal neu zu verbinden — ohne diese
+/// Unterscheidung würde jeder erfolgreiche manuelle Reconnect-Klick, der knapp vor einem
+/// zeitgleichen Supervisor-Versuch gewinnt, sofort von genau diesem Supervisor-Versuch wieder
+/// zunichtegemacht (Connect → sofort erneuter Wipe+Connect-Flicker).
 pub(crate) async fn do_connect_core(
     app: &AppHandle,
     state: &AppState,
     password: Option<String>,
     policy: HostkeyPolicy,
+    opportunistic: bool,
 ) -> Result<(), ApiError> {
     // Serialisiert ALLE Connect-Versuche (manuell, Hostkey-Accept, Supervisor) — verhindert
     // zwei echte `SshConnection::connect`-Läufe gleichzeitig gegen denselben Host.
@@ -136,6 +150,12 @@ pub(crate) async fn do_connect_core(
     {
         let mut inner = state.lock().await;
         if inner.conn.is_some() {
+            if opportunistic {
+                // Siehe Doku oben: ein anderer Aufruf (i.d.R. der manuelle Retry-Button) hat
+                // bereits erfolgreich verbunden, während dieser Supervisor-Versuch auf den
+                // Lock wartete — nichts wegwerfen, einfach als Erfolg werten.
+                return Ok(());
+            }
             inner.conn = None;
             let old_sessions = std::mem::take(&mut inner.sessions);
             drop(inner);
@@ -199,7 +219,7 @@ pub async fn connect(
     password: Option<String>,
 ) -> Result<(), ApiError> {
     app.state::<ReconnectSupervisor>().wake_retry();
-    do_connect_core(&app, &state, password, HostkeyPolicy::Strict).await
+    do_connect_core(&app, &state, password, HostkeyPolicy::Strict, false).await
 }
 
 /// Wie `connect`, aber mit `HostkeyPolicy::AcceptNew`: genau EIN Connect-Versuch, der den bis
@@ -212,7 +232,7 @@ pub async fn accept_hostkey_and_connect(
     password: Option<String>,
 ) -> Result<(), ApiError> {
     app.state::<ReconnectSupervisor>().wake_retry();
-    do_connect_core(&app, &state, password, HostkeyPolicy::AcceptNew).await
+    do_connect_core(&app, &state, password, HostkeyPolicy::AcceptNew, false).await
 }
 
 // Tauri-Regel: async Commands mit Referenz-Argumenten (`State<'_, _>`) müssen `Result`
