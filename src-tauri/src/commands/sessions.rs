@@ -1,5 +1,8 @@
 //! Session-Streaming-Commands (Kern von M4): `list_sessions`, `open_session`,
 //! `start_project`, `write_session`, `resize_session`, `close_session`, `kill_session`.
+//! Task 6 ergänzt: `reattach_lost_sessions` (Reconnect-Re-Attach, siehe
+//! `reconnect_supervisor.rs`) und einen Verlust-Trigger (`note_ssh_failure`) an jeder Stelle,
+//! die einen SSH-Fehlpfad in `ApiError` übersetzt.
 //!
 //! Lock-Disziplin (Fix Critical, siehe `state.rs`): JEDER Command lockt `AppState` nur kurz,
 //! um ein `Arc<SshConnection>` bzw. `Arc<Mutex<Option<PtyHandle>>>` zu klonen oder einen
@@ -18,19 +21,27 @@
 //! (Global Constraint).
 //!
 //! Forwarder-Task (ein `tokio::spawn` pro offener Session, gestartet in `open_session`/
-//! `start_project`): liest `PtyEvent`s aus `take_output()`, batcht Bytes über die reine
-//! Entscheidungsfunktion `claudedeck_core::util::should_flush` (>=32 KiB ODER >=10ms seit
-//! dem ersten ungeflushten Byte) und sendet den Batch base64-kodiert über den
-//! `Channel<OutputChunk>` ans Frontend. Bei `PtyEvent::Exit` wird der Restpuffer geflusht; ob
-//! `pty-exit` emittiert wird, hängt vom `closing`-Flag ab (Fix Important — siehe
-//! `spawn_forwarder`): bei einem selbst ausgelösten Detach (`close_session` hat `closing`
-//! bereits gesetzt) wird NICHT emittiert, weil das Frontend sonst fälschlich "Prozess beendet"
-//! anzeigen würde, obwohl der Nutzer nur detached hat. Der Map-Eintrag wird in jedem Fall
-//! (idempotent) entfernt.
+//! `start_project`/`reattach_lost_sessions`): liest `PtyEvent`s aus `take_output()`, batcht
+//! Bytes über die reine Entscheidungsfunktion `claudedeck_core::util::should_flush` (>=32 KiB
+//! ODER >=10ms seit dem ersten ungeflushten Byte) und sendet den Batch base64-kodiert über den
+//! `Channel<OutputChunk>` ans Frontend. Bei `PtyEvent::Exit` wird der Restpuffer geflusht;
+//! danach entscheidet `closing`/`lost` (Fix Important + Task-6-Auflage B/C), was passiert:
+//! - `closing == false`: ein `exit_code` von `None` (kein `ChannelMsg::ExitStatus` je
+//!   empfangen) ist ein starkes Indiz für einen toten Transport statt eines echten
+//!   Prozessendes (ein regulärer `tmux kill-session`/Prozess-Exit liefert normalerweise einen
+//!   Exit-Code, bevor der Kanal schließt) — statt hier zu raten, wird nur `trigger_loss()`
+//!   aufgerufen; die eigentliche Klassifizierung (Sessions verlieren, `pty-exit
+//!   reason:"connectionLost"` emittieren, PTYs schließen) läuft zentral und einmalig in
+//!   `reconnect_supervisor::mark_all_lost`. Ein `exit_code` von `Some(_)` ist ein echtes
+//!   Prozessende → `pty-exit{reason:"exited"}` + Map-Eintrag entfernen.
+//! - `closing == true` (Detach via `close_session` ODER Verlust via `mark_all_lost` — beide
+//!   setzen `closing` VOR dem `pty.close()`-Spawn): kein `pty-exit` hier. Der Map-Eintrag wird
+//!   nur entfernt, wenn NICHT `lost` (Detach-Fall) — eine `lost`-Session bleibt für den
+//!   Re-Attach in der Map stehen.
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +60,7 @@ use claudedeck_core::tmux::parser::{merge, parse_panes, parse_sessions, SessionI
 use claudedeck_core::util::should_flush;
 
 use crate::error::ApiError;
+use crate::reconnect_supervisor::ReconnectSupervisor;
 use crate::state::{AppInner, AppState, SessionEntry};
 
 /// Timeout für `pty.write`/`pty.resize` (Fix Critical, Timeout-Härtung im Hot-Path) — ein
@@ -64,11 +76,24 @@ pub struct OutputChunk {
     data_b64: String,
 }
 
+/// `pub(crate)` (statt privat wie vor Task 6) — `reconnect_supervisor::mark_all_lost` baut
+/// dieselbe Struktur direkt, um `pty-exit{reason:"connectionLost"}` zu emittieren, ohne einen
+/// eigenen, zweiten Event-Payload-Typ zu duplizieren.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct PtyExitEvent {
+pub(crate) struct PtyExitEvent {
+    pub(crate) session_id: String,
+    pub(crate) reason: &'static str,
+}
+
+/// Task-6-Ergänzung: Payload des neuen `session-reattached`-Events (Auflage C). Erweitert den
+/// im Plan dokumentierten IPC-Contract um dieses eine Event — siehe Task-6-Report, Abschnitt
+/// "Re-Attach-Variante", für die Begründung (serverseitiges Re-Attach auf denselben
+/// `Channel<OutputChunk>` statt eines Frontend-getriebenen erneuten `open_session`).
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SessionReattachedEvent {
     session_id: String,
-    reason: &'static str,
 }
 
 /// App-eigenes Abbild von `claudedeck_core::tmux::parser::SessionInfo` fürs Frontend
@@ -148,6 +173,17 @@ fn session_not_found(session_id: &str) -> ApiError {
     }
 }
 
+/// Task-6-Ergänzung: eigene, sprechendere Meldung für eine `session_id`, die es zwar noch gibt,
+/// deren PTY aber wegen eines Verbindungsverlusts gerade `None` ist (wartet auf Re-Attach) —
+/// unterscheidbar von `session_not_found` (Session existiert wirklich nicht mehr), damit das
+/// Frontend bei Bedarf differenzieren kann (aktuell zeigt es ohnehin schon das dauerhafte
+/// `connection-lost-banner`, siehe `TerminalHost.tsx`).
+fn session_lost(session_id: &str) -> ApiError {
+    ApiError::Io {
+        message: format!("Session {session_id} wartet auf Reconnect"),
+    }
+}
+
 /// Fix Critical (Timeout-Härtung): Message für einen abgelaufenen `pty.write`/`pty.resize`.
 fn io_timeout(op: &str) -> ApiError {
     ApiError::Io {
@@ -162,6 +198,17 @@ fn ssh_to_api<E: std::fmt::Display>(err: E) -> ApiError {
     ApiError::Ssh {
         message: err.to_string(),
     }
+}
+
+/// Task-6-Ergänzung: wie `ssh_to_api`, meldet den Fehlpfad aber zusätzlich dem
+/// Reconnect-Supervisor (`trigger_loss` — idempotent, siehe `reconnect_supervisor.rs`), BEVOR
+/// er in eine `ApiError` übersetzt wird. Das ist der zweite der beiden im Auftrag genannten
+/// Verlust-Trigger ("Fehlpfade von write/exec"), neben dem periodischen Keepalive im
+/// Supervisor selbst. Wird an JEDER Stelle genutzt, die einen echten SSH-Transport-Fehler
+/// (nicht: `TmuxMissing`, nicht: "Session-ID unbekannt") in `ApiError` übersetzt.
+fn note_ssh_failure<E: std::fmt::Display>(app: &AppHandle, err: E) -> ApiError {
+    app.state::<ReconnectSupervisor>().trigger_loss();
+    ssh_to_api(err)
 }
 
 /// `2>/dev/null || true` in `cmd_list_sessions`/`cmd_list_panes` schluckt zwar den
@@ -181,16 +228,19 @@ fn check_tmux_exit(out: &ExecOutput) -> Result<(), ApiError> {
 
 /// `list-sessions` + `list-panes` ausführen und mergen — von `list_sessions` und
 /// `start_project` (Kollisionsprüfung gegen laufende Namen) gemeinsam genutzt.
-async fn running_sessions(conn: &SshConnection) -> Result<Vec<SessionInfo>, ApiError> {
+async fn running_sessions(
+    app: &AppHandle,
+    conn: &SshConnection,
+) -> Result<Vec<SessionInfo>, ApiError> {
     let sessions_out = conn
         .exec_capture(&tmux_cmd::cmd_list_sessions())
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(app, e))?;
     check_tmux_exit(&sessions_out)?;
     let panes_out = conn
         .exec_capture(&tmux_cmd::cmd_list_panes())
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(app, e))?;
     check_tmux_exit(&panes_out)?;
     Ok(merge(
         parse_sessions(&sessions_out.stdout),
@@ -202,17 +252,14 @@ async fn running_sessions(conn: &SshConnection) -> Result<Vec<SessionInfo>, ApiE
 /// eigener `tokio::spawn`-Task, solange die Session offen ist; endet, sobald `PtyEvent::Exit`
 /// eintrifft (oder der Sender — der PTY-Reader-Task — ohne vorheriges `Exit` wegfällt).
 ///
-/// `closing` (Fix Important): dasselbe `Arc<AtomicBool>`, das auch in der `SessionEntry` liegt
-/// und von `close_session` VOR dem Schließen gesetzt wird. Ist es beim `PtyEvent::Exit` bereits
-/// `true`, war der Exit die erwartete Folge eines selbst ausgelösten Detach (nicht ein
-/// fremdverursachtes Prozessende) — dann wird `pty-exit` NICHT emittiert, aber trotzdem
-/// geflusht und der (meist schon fehlende) Map-Eintrag idempotent entfernt.
+/// `closing`/`lost`: siehe Moduldoku oben und `state.rs::SessionEntry`.
 fn spawn_forwarder(
     app: AppHandle,
     session_id: String,
     mut rx: mpsc::Receiver<PtyEvent>,
     channel: Channel<OutputChunk>,
     closing: Arc<AtomicBool>,
+    lost: Arc<AtomicBool>,
 ) {
     fn flush(buf: &mut Vec<u8>, channel: &Channel<OutputChunk>) {
         if buf.is_empty() {
@@ -254,19 +301,39 @@ fn spawn_forwarder(
                                 first_byte_at = None;
                             }
                         }
-                        Some(PtyEvent::Exit(_)) => {
+                        Some(PtyEvent::Exit(exit_code)) => {
                             flush(&mut buf, &channel);
-                            // Fix Important: kein `pty-exit` bei selbst ausgelöstem Detach —
-                            // siehe Doku oben und an `SessionEntry::closing`.
-                            if !closing.load(Ordering::SeqCst) {
-                                let _ = app.emit(
-                                    "pty-exit",
-                                    PtyExitEvent { session_id: session_id.clone(), reason: "exited" },
-                                );
+                            let is_closing = closing.load(Ordering::SeqCst);
+                            let is_lost = lost.load(Ordering::SeqCst);
+
+                            if is_closing {
+                                // Detach (`close_session`) ODER bereits durch
+                                // `mark_all_lost` als Verlust markiert (beide setzen
+                                // `closing` VOR dem `pty.close()`-Spawn) — kein `pty-exit`
+                                // hier. Bei `lost==true` bleibt der Map-Eintrag für den
+                                // Re-Attach stehen; sonst (Detach) ist `remove` idempotent
+                                // (der Command hat den Eintrag meist schon selbst entfernt).
+                                if !is_lost {
+                                    app.state::<AppState>().lock().await.sessions.remove(&session_id);
+                                }
+                                return;
                             }
-                            // `remove` ist ein No-op, falls `close_session` den Eintrag schon
-                            // entfernt hat (Detach-Fall) — sonst räumt es hier den durch ein
-                            // echtes Prozessende verwaisten Eintrag auf.
+
+                            if exit_code.is_none() {
+                                // Kein selbst ausgelöstes Schließen UND kein Exit-Code vom
+                                // Server — starkes Indiz für einen toten Transport statt
+                                // eines echten Prozessendes (siehe Moduldoku). Überlässt die
+                                // Klassifizierung zentral `mark_all_lost`, statt hier über
+                                // eine einzelne Session zu entscheiden.
+                                app.state::<ReconnectSupervisor>().trigger_loss();
+                                return;
+                            }
+
+                            // Echtes Prozessende mit bekanntem Exit-Code.
+                            let _ = app.emit(
+                                "pty-exit",
+                                PtyExitEvent { session_id: session_id.clone(), reason: "exited" },
+                            );
                             app.state::<AppState>().lock().await.sessions.remove(&session_id);
                             return;
                         }
@@ -291,18 +358,21 @@ fn spawn_forwarder(
 }
 
 #[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>) -> Result<SessionList, ApiError> {
+pub async fn list_sessions(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SessionList, ApiError> {
     let conn = {
         let inner = state.lock().await;
         require_conn(&inner)?
     };
-    let running = running_sessions(&conn).await?;
+    let running = running_sessions(&app, &conn).await?;
 
     let cfg = config::load_from(&config::config_path());
     let scan_out = conn
         .exec_capture(&tmux_cmd::cmd_scan_projects(&cfg.scan_paths))
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(&app, e))?;
 
     let running_names: HashSet<String> = running.iter().map(|s| s.name.clone()).collect();
 
@@ -346,9 +416,10 @@ pub async fn open_session(
     let mut pty = conn
         .open_pty(&tmux_cmd::cmd_attach(&name), cols as u32, rows as u32)
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(&app, e))?;
     let output_rx = pty.take_output();
     let closing = Arc::new(AtomicBool::new(false));
+    let lost = Arc::new(AtomicBool::new(false));
     let pty_arc = Arc::new(tokio::sync::Mutex::new(Some(pty)));
 
     let session_id = {
@@ -359,13 +430,17 @@ pub async fn open_session(
             SessionEntry {
                 pty: pty_arc,
                 closing: closing.clone(),
+                lost: lost.clone(),
+                channel: on_output.clone(),
+                cols: Arc::new(AtomicU32::new(cols as u32)),
+                rows: Arc::new(AtomicU32::new(rows as u32)),
                 name,
             },
         );
         session_id
     };
 
-    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing);
+    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing, lost);
     Ok(session_id)
 }
 
@@ -383,7 +458,7 @@ pub async fn start_project(
         require_conn(&inner)?
     };
 
-    let running = running_sessions(&conn).await?;
+    let running = running_sessions(&app, &conn).await?;
     let existing: HashSet<String> = running.iter().map(|s| s.name.clone()).collect();
 
     let basename = Path::new(&path)
@@ -397,7 +472,7 @@ pub async fn start_project(
     let new_out = conn
         .exec_capture(&tmux_cmd::cmd_new_detached(&session_name, &path, "claude"))
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(&app, e))?;
     check_tmux_exit(&new_out)?;
     if !new_out.success() {
         return Err(ApiError::Ssh {
@@ -412,9 +487,10 @@ pub async fn start_project(
             rows as u32,
         )
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(&app, e))?;
     let output_rx = pty.take_output();
     let closing = Arc::new(AtomicBool::new(false));
+    let lost = Arc::new(AtomicBool::new(false));
     let pty_arc = Arc::new(tokio::sync::Mutex::new(Some(pty)));
 
     let session_id = {
@@ -425,13 +501,17 @@ pub async fn start_project(
             SessionEntry {
                 pty: pty_arc,
                 closing: closing.clone(),
+                lost: lost.clone(),
+                channel: on_output.clone(),
+                cols: Arc::new(AtomicU32::new(cols as u32)),
+                rows: Arc::new(AtomicU32::new(rows as u32)),
                 name: session_name.clone(),
             },
         );
         session_id
     };
 
-    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing);
+    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing, lost);
     Ok(StartResult {
         session_id,
         session_name,
@@ -440,6 +520,7 @@ pub async fn start_project(
 
 #[tauri::command]
 pub async fn write_session(
+    app: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
     data_b64: String,
@@ -452,48 +533,74 @@ pub async fn write_session(
 
     // Fix Critical: nur den `Arc` klonen und den State-Lock sofort wieder freigeben — der
     // eigentliche Schreib-Await läuft danach ausschließlich gegen den Session-eigenen Mutex.
-    let pty = {
+    let (pty, lost) = {
         let inner = state.lock().await;
-        inner
+        let entry = inner
             .sessions
             .get(&session_id)
-            .map(|e| e.pty.clone())
-            .ok_or_else(|| session_not_found(&session_id))?
+            .ok_or_else(|| session_not_found(&session_id))?;
+        (entry.pty.clone(), entry.lost.clone())
     };
+    if lost.load(Ordering::SeqCst) {
+        return Err(session_lost(&session_id));
+    }
 
     let mut guard = pty.lock().await;
     let handle = guard
         .as_mut()
         .ok_or_else(|| session_not_found(&session_id))?;
     match tokio::time::timeout(SESSION_IO_TIMEOUT, handle.write(&bytes)).await {
-        Ok(res) => res.map_err(ApiError::from),
-        Err(_) => Err(io_timeout("Schreiben in Session")),
+        Ok(res) => res.map_err(|e| note_ssh_failure(&app, e)),
+        Err(_) => {
+            app.state::<ReconnectSupervisor>().trigger_loss();
+            Err(io_timeout("Schreiben in Session"))
+        }
     }
 }
 
 #[tauri::command]
 pub async fn resize_session(
+    app: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), ApiError> {
-    let pty = {
+    let (pty, lost, cols_atomic, rows_atomic) = {
         let inner = state.lock().await;
-        inner
+        let entry = inner
             .sessions
             .get(&session_id)
-            .map(|e| e.pty.clone())
-            .ok_or_else(|| session_not_found(&session_id))?
+            .ok_or_else(|| session_not_found(&session_id))?;
+        (
+            entry.pty.clone(),
+            entry.lost.clone(),
+            entry.cols.clone(),
+            entry.rows.clone(),
+        )
     };
+    if lost.load(Ordering::SeqCst) {
+        return Err(session_lost(&session_id));
+    }
 
     let guard = pty.lock().await;
     let handle = guard
         .as_ref()
         .ok_or_else(|| session_not_found(&session_id))?;
     match tokio::time::timeout(SESSION_IO_TIMEOUT, handle.resize(cols as u32, rows as u32)).await {
-        Ok(res) => res.map_err(ssh_to_api),
-        Err(_) => Err(io_timeout("Resize der Session")),
+        Ok(Ok(())) => {
+            // Task-6-Ergänzung: letzte bekannte Größe merken, damit ein Re-Attach nach
+            // Verbindungsverlust `open_pty` mit der aktuellen (nicht der ursprünglichen
+            // `open_session`-Fallback-)Größe aufruft.
+            cols_atomic.store(cols as u32, Ordering::Relaxed);
+            rows_atomic.store(rows as u32, Ordering::Relaxed);
+            Ok(())
+        }
+        Ok(Err(e)) => Err(note_ssh_failure(&app, e)),
+        Err(_) => {
+            app.state::<ReconnectSupervisor>().trigger_loss();
+            Err(io_timeout("Resize der Session"))
+        }
     }
 }
 
@@ -543,7 +650,7 @@ pub async fn kill_session(
     let out = conn
         .exec_capture(&tmux_cmd::cmd_kill(&name))
         .await
-        .map_err(ssh_to_api)?;
+        .map_err(|e| note_ssh_failure(&app, e))?;
 
     check_tmux_exit(&out)?;
     if !out.success() {
@@ -554,4 +661,96 @@ pub async fn kill_session(
 
     let _ = app.emit("sessions-changed", ());
     Ok(())
+}
+
+/// Task-6-Kern (Auflage C, Re-Attach): nach einem erfolgreichen (Re-)Connect aufgerufen (aus
+/// `commands::connection::do_connect_core`, sowohl bei einem normalen `connect()`-Aufruf — dort
+/// i.d.R. No-Op, weil keine Session `lost` ist — als auch nach jedem erfolgreichen
+/// Supervisor-Reconnect-Versuch). Für jede Session mit `lost == true`:
+/// - `conn.open_pty(cmd_attach(name), …)` mit der zuletzt bekannten Größe (`SessionEntry::cols`/
+///   `rows`, von `resize_session` nachgeführt) statt der ursprünglichen `open_session`-
+///   Fallback-Größe.
+/// - Erfolg: neuer `PtyHandle` in den (leeren) `pty`-Slot, `closing`/`lost` zurück auf `false`,
+///   neuer Forwarder auf DEMSELBEN `Channel<OutputChunk>` (`SessionEntry::channel`, `Clone` —
+///   siehe `state.rs`) — das Frontend merkt vom Re-Attach nur das `session-reattached`-Event
+///   (`sessionStore.reattached()`, Auflage C), der Channel-Callback selbst läuft unverändert
+///   weiter.
+/// - Fehlschlag (z.B. die tmux-Session existiert serverseitig nicht mehr, weil sie während des
+///   Ausfalls extern gekillt wurde): Eintrag endgültig entfernen, `pty-exit{reason:"exited"}`
+///   statt eines Re-Attachs — robuster als eine für immer `lost` bleibende Zombie-Session.
+pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
+    let conn = {
+        let inner = state.lock().await;
+        match inner.conn.clone() {
+            Some(c) => c,
+            None => return,
+        }
+    };
+
+    #[allow(clippy::type_complexity)]
+    let lost_sessions: Vec<(
+        String,
+        String,
+        Arc<tokio::sync::Mutex<Option<claudedeck_core::ssh::PtyHandle>>>,
+        Arc<AtomicBool>,
+        Arc<AtomicBool>,
+        Channel<OutputChunk>,
+        u32,
+        u32,
+    )> = {
+        let inner = state.lock().await;
+        inner
+            .sessions
+            .iter()
+            .filter(|(_, e)| e.lost.load(Ordering::SeqCst))
+            .map(|(id, e)| {
+                (
+                    id.clone(),
+                    e.name.clone(),
+                    e.pty.clone(),
+                    e.closing.clone(),
+                    e.lost.clone(),
+                    e.channel.clone(),
+                    e.cols.load(Ordering::Relaxed),
+                    e.rows.load(Ordering::Relaxed),
+                )
+            })
+            .collect()
+    };
+
+    for (id, name, pty_arc, closing, lost_flag, channel, cols, rows) in lost_sessions {
+        match conn
+            .open_pty(&tmux_cmd::cmd_attach(&name), cols, rows)
+            .await
+        {
+            Ok(mut new_pty) => {
+                let output_rx = new_pty.take_output();
+                *pty_arc.lock().await = Some(new_pty);
+                closing.store(false, Ordering::SeqCst);
+                lost_flag.store(false, Ordering::SeqCst);
+                spawn_forwarder(
+                    app.clone(),
+                    id.clone(),
+                    output_rx,
+                    channel,
+                    closing,
+                    lost_flag,
+                );
+                let _ = app.emit(
+                    "session-reattached",
+                    SessionReattachedEvent { session_id: id },
+                );
+            }
+            Err(_) => {
+                state.lock().await.sessions.remove(&id);
+                let _ = app.emit(
+                    "pty-exit",
+                    PtyExitEvent {
+                        session_id: id,
+                        reason: "exited",
+                    },
+                );
+            }
+        }
+    }
 }

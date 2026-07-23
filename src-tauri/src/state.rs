@@ -12,11 +12,13 @@
 //! aufzurufen, ohne `SshConnection` selbst klonbar machen zu müssen (kleinstmöglicher Eingriff).
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use claudedeck_core::ssh::{PtyHandle, SshConnection};
 use tokio::sync::Mutex;
+
+use crate::commands::sessions::OutputChunk;
 
 /// Eine laufende, an diese App-Instanz angehängte PTY-Session.
 ///
@@ -31,21 +33,59 @@ use tokio::sync::Mutex;
 /// per `Arc::try_unwrap` zu raten, ob gerade sonst niemand mehr eine Referenz hält (Race mit
 /// einem parallel laufenden `write_session`/`resize_session`). Nach dem `take()` sehen spätere
 /// Zugriffe `None` und scheitern sauber mit einer `ApiError::Io`, statt auf einen bereits
-/// geschlossenen Kanal zu schreiben.
+/// geschlossenen Kanal zu schreiben. Während einer Reconnect-Pause (`lost == true`) ist `pty`
+/// ebenfalls `None` — nicht weil die Session geschlossen wurde, sondern weil ihr PTY-Kanal zur
+/// toten Verbindung gehörte und explizit geschlossen wurde (Auflage B); der Slot wird beim
+/// erfolgreichen Re-Attach (`commands::sessions::reattach_lost_sessions`) neu befüllt.
 ///
-/// `closing`: von `close_session` und dem Forwarder-Task geteiltes Flag (Review-Fund,
-/// Important). `close_session` (Detach) setzt es VOR dem Spawn von `pty.close()` — der
-/// Forwarder prüft es beim `PtyEvent::Exit`, um einen selbst ausgelösten Detach von einem
-/// echten, fremdverursachten Prozessende zu unterscheiden (nur Letzteres emittiert `pty-exit`
-/// ans Frontend). Siehe `commands/sessions.rs`.
+/// `closing`: von `close_session`/dem Reconnect-Supervisor und dem Forwarder-Task geteiltes
+/// Flag (Review-Fund M4-Task-3, Important). Wird VOR dem Spawn von `pty.close()` gesetzt — der
+/// Forwarder prüft es beim `PtyEvent::Exit`, um ein selbst ausgelöstes Schließen (Detach ODER
+/// Verbindungsverlust) von einem echten, fremdverursachten Prozessende zu unterscheiden (nur
+/// Letzteres emittiert `pty-exit{reason:"exited"}` ans Frontend). Siehe `commands/sessions.rs`.
+///
+/// `lost`: Task-6-Ergänzung (Auflage C/Reconnect). `true`, während diese Session auf ein
+/// Re-Attach nach Verbindungsverlust wartet — steuert zusammen mit `closing`, ob der Forwarder
+/// beim `PtyEvent::Exit` den Map-Eintrag entfernen darf (nein, solange `lost`) und ob
+/// `reattach_lost_sessions` diese Session überhaupt anfasst.
+///
+/// `channel`/`cols`/`rows`: Task-6-Ergänzung fürs Re-Attach. `tauri::ipc::Channel` ist `Clone`
+/// (geprüft laut Auftrag) — derselbe Channel, den das Frontend beim ursprünglichen
+/// `open_session`/`start_project` übergeben hat, wird für den neuen Forwarder nach einem
+/// erfolgreichen Reconnect wiederverwendet, statt dass das Frontend selbst erneut
+/// `open_session` aufrufen und die `sessionId` im Store/TermPool austauschen müsste (siehe
+/// Task-6-Report, Abschnitt "Re-Attach-Variante"). `cols`/`rows` sind `AtomicU32`, damit
+/// `resize_session` die zuletzt gemeldete Terminalgröße lock-frei nachführen kann (gebraucht,
+/// um beim Re-Attach mit der richtigen Größe zu `open_pty` statt der ursprünglichen
+/// `open_session`-Fallback-Größe).
 pub struct SessionEntry {
     pub pty: Arc<Mutex<Option<PtyHandle>>>,
     pub closing: Arc<AtomicBool>,
-    // Vom Task-3-Brief vorgesehen (u.a. für spätere Diagnose/Reattach-Anzeige), aber von
-    // keinem aktuellen Command gelesen — `dead_code`-Warnung daher bewusst unterdrückt statt
-    // das Feld zu entfernen und den Contract-Spielraum zu verlieren.
-    #[allow(dead_code)]
+    pub lost: Arc<AtomicBool>,
+    pub channel: tauri::ipc::Channel<OutputChunk>,
+    pub cols: Arc<AtomicU32>,
+    pub rows: Arc<AtomicU32>,
     pub name: String,
+}
+
+/// Schließt JEDEN `PtyHandle` einer bereits aus der Map entfernten Session-Sammlung explizit
+/// (Auflage B aus dem Task-6-Ledger: "alle PtyHandles explizit close()n … kein Verlassen auf
+/// Drop-Kaskade") — ein `tokio::spawn` pro Session, nie blockierend (Global Constraint: PTY-
+/// `close()` kann laut `pty.rs` bis zu 2s dauern). Setzt `closing=true` vorher, damit ein noch
+/// laufender Forwarder das dadurch ausgelöste `PtyEvent::Exit` nicht fälschlich als "echtes"
+/// Prozessende meldet — dieselbe Konvention wie `close_session`/Detach (Fix Important,
+/// Task-3-Report). Geteilt von `disconnect()` (Auflage B) und dem Reentrancy-Cleanup-Pfad in
+/// `commands::connection::do_connect_core` (Auflage A).
+pub fn cleanup_sessions_fully(sessions: HashMap<String, SessionEntry>) {
+    for (_, entry) in sessions {
+        entry.closing.store(true, Ordering::SeqCst);
+        tokio::spawn(async move {
+            let handle = entry.pty.lock().await.take();
+            if let Some(handle) = handle {
+                let _ = handle.close().await;
+            }
+        });
+    }
 }
 
 /// Innerer, durch `AppState`s Mutex geschützter Zustand.

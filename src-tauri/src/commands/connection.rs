@@ -7,6 +7,28 @@
 //! `ssh`-Lauf mit `StrictHostKeyChecking=accept-new`) unbeaufsichtigt hineingelangt sind — die
 //! App würde ihnen dann blind vertrauen (fail-open). Die eigene Datei kennt nur Keys, die diese
 //! App selbst per explizitem Nutzer-OK (`accept_hostkey_and_connect`) akzeptiert hat.
+//!
+//! ## Task 6, Auflage A — Reentrancy-Guard
+//!
+//! `do_connect_core` (der gemeinsame Kern hinter `connect`/`accept_hostkey_and_connect` UND
+//! den automatischen Versuchen des Reconnect-Supervisors, siehe `reconnect_supervisor.rs`)
+//! prüft als ALLERERSTES, ob `AppState.conn` bereits `Some` ist. Wenn ja: die bestehende
+//! Verbindung UND ihre Sessions werden vollständig aufgeräumt (`state::cleanup_sessions_fully`,
+//! Auflage B — jeder `PtyHandle` explizit `close()`t, `tokio::spawn`, nicht blockierend),
+//! BEVOR der neue Verbindungsversuch beginnt. Bewusste Wahl gegenüber einem Fehler: ein
+//! zweiter `connect()`-Aufruf, während die App schon verbunden ist, ist kein Sonderfall, den
+//! wir ablehnen müssen (z.B. ein künftiger Profilwechsel) — er verhält sich einfach wie ein
+//! impliziter `disconnect()` gefolgt von `connect()`. Alle `do_connect_core`-Aufrufe laufen
+//! zusätzlich seriell hinter `ReconnectSupervisor::connect_lock` (verhindert zwei echte
+//! `SshConnection::connect`-Läufe gleichzeitig gegen denselben Host, z.B. wenn der manuelle
+//! "Jetzt neu verbinden"-Button und der Supervisor selbst binnen Millisekunden beide versuchen).
+//!
+//! Während einer laufenden Reconnect-Recovery (`AppState.conn == None`, Sessions mit
+//! `lost == true`) greift dieser Reentrancy-Zweig NICHT — dort ist `conn` ja bereits `None`,
+//! genau damit ein nachfolgender `do_connect_core`-Aufruf (egal ob manuell oder vom
+//! Supervisor) direkt zum normalen Verbindungsaufbau + Re-Attach (`reattach_lost_sessions`)
+//! durchläuft, statt die gerade erst als `lost` markierten Sessions ein zweites Mal
+//! wegzuräumen.
 
 use claudedeck_core::config::{self, AuthMethod, Config, Profile};
 use claudedeck_core::secrets::{KeyringStore, SecretKind, SecretStore};
@@ -14,10 +36,12 @@ use claudedeck_core::ssh::{Auth, ConnectParams, HostkeyPolicy, SshConnection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::commands::sessions::reattach_lost_sessions;
 use crate::error::ApiError;
-use crate::state::AppState;
+use crate::reconnect_supervisor::ReconnectSupervisor;
+use crate::state::{cleanup_sessions_fully, AppState};
 
 /// Bis das Config-Schema mehrere benannte Profile unterstützt (aktuell genau ein
 /// `Config::profile`, siehe `claudedeck_core::config::Config`), ist die Keyring-Ablage an
@@ -91,12 +115,34 @@ fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Au
     }
 }
 
-async fn do_connect(
+/// Gemeinsamer Kern hinter `connect`/`accept_hostkey_and_connect` UND den automatischen
+/// Reconnect-Versuchen des Supervisors (`reconnect_supervisor::run_recovery`) — siehe
+/// Moduldoku, Abschnitt "Auflage A", für die Reentrancy-Guard-Begründung. `pub(crate)`, damit
+/// `reconnect_supervisor.rs` denselben Pfad nutzt statt Connect-Logik zu duplizieren.
+pub(crate) async fn do_connect_core(
     app: &AppHandle,
     state: &AppState,
     password: Option<String>,
     policy: HostkeyPolicy,
 ) -> Result<(), ApiError> {
+    // Serialisiert ALLE Connect-Versuche (manuell, Hostkey-Accept, Supervisor) — verhindert
+    // zwei echte `SshConnection::connect`-Läufe gleichzeitig gegen denselben Host.
+    let sup = app.state::<ReconnectSupervisor>();
+    let _connect_guard = sup.connect_lock.lock().await;
+
+    // Auflage A: Reentrancy-Guard. Bereits verbunden? Alte Verbindung + ihre Sessions
+    // vollständig aufräumen (Auflage B), bevor der neue Versuch beginnt. Greift NICHT während
+    // einer laufenden Reconnect-Recovery — dort ist `conn` bereits `None` (siehe Moduldoku).
+    {
+        let mut inner = state.lock().await;
+        if inner.conn.is_some() {
+            inner.conn = None;
+            let old_sessions = std::mem::take(&mut inner.sessions);
+            drop(inner);
+            cleanup_sessions_fully(old_sessions);
+        }
+    }
+
     emit_connection_state(app, "connecting");
 
     let config = config::load_from(&config::config_path());
@@ -123,6 +169,10 @@ async fn do_connect(
             // Commands klonen nur dieses `Arc` unterm State-Lock und awaiten SSH-Operationen
             // danach außerhalb des Locks.
             state.lock().await.conn = Some(Arc::new(conn));
+            // Task 6: Re-Attach jeder `lost`-Session auf den neuen `Arc<SshConnection>` — bei
+            // einem normalen Erstconnect ist die Sessions-Map leer bzw. keine Session `lost`,
+            // dann ist das ein No-Op.
+            reattach_lost_sessions(app, state).await;
             emit_connection_state(app, "connected");
             Ok(())
         }
@@ -137,13 +187,19 @@ async fn do_connect(
 /// unbekannten Host-Key scheitert das mit `ApiError::HostkeyUnknown{fingerprint}` — das
 /// Frontend zeigt dann den Bestätigungsdialog und ruft bei Zustimmung
 /// `accept_hostkey_and_connect` auf.
+///
+/// Ruft bei JEDEM Aufruf `wake_retry()` — falls der Reconnect-Supervisor gerade in seinem
+/// Backoff-`sleep` wartet (z.B. weil dies der manuelle "Jetzt neu verbinden"-Button im
+/// ReconnectOverlay war), wacht er sofort auf statt den Rest der Wartezeit verstreichen zu
+/// lassen. Ist der Supervisor gerade NICHT am Warten, ist der Aufruf ein folgenloses No-Op.
 #[tauri::command]
 pub async fn connect(
     app: AppHandle,
     state: State<'_, AppState>,
     password: Option<String>,
 ) -> Result<(), ApiError> {
-    do_connect(&app, &state, password, HostkeyPolicy::Strict).await
+    app.state::<ReconnectSupervisor>().wake_retry();
+    do_connect_core(&app, &state, password, HostkeyPolicy::Strict).await
 }
 
 /// Wie `connect`, aber mit `HostkeyPolicy::AcceptNew`: genau EIN Connect-Versuch, der den bis
@@ -155,18 +211,29 @@ pub async fn accept_hostkey_and_connect(
     state: State<'_, AppState>,
     password: Option<String>,
 ) -> Result<(), ApiError> {
-    do_connect(&app, &state, password, HostkeyPolicy::AcceptNew).await
+    app.state::<ReconnectSupervisor>().wake_retry();
+    do_connect_core(&app, &state, password, HostkeyPolicy::AcceptNew).await
 }
 
 // Tauri-Regel: async Commands mit Referenz-Argumenten (`State<'_, _>`) müssen `Result`
 // zurückgeben. `disconnect` kann laut IPC-Contract nicht fehlschlagen — `Result<(), ()>`
 // bleibt für das Frontend äquivalent zu `-> ()` (löst immer auf, nie ein `Err`).
+///
+/// Auflage B: alle `PtyHandle`s der noch offenen Sessions werden explizit `close()`t
+/// (`cleanup_sessions_fully` — je ein `tokio::spawn`, nie blockierend), statt sich auf die
+/// Drop-Kaskade von `AppInner.sessions` zu verlassen. Bricht zusätzlich eine gerade laufende
+/// Reconnect-Recovery-Runde ab (`ReconnectSupervisor::cancel`) — ein Nutzer, der bewusst
+/// trennt, während der Supervisor noch im Backoff wartet, soll NICHT Sekunden später
+/// automatisch wieder verbunden werden.
 #[tauri::command]
 pub async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), ()> {
-    let mut inner = state.lock().await;
-    inner.conn = None;
-    inner.sessions.clear();
-    drop(inner);
+    app.state::<ReconnectSupervisor>().cancel();
+    let sessions = {
+        let mut inner = state.lock().await;
+        inner.conn = None;
+        std::mem::take(&mut inner.sessions)
+    };
+    cleanup_sessions_fully(sessions);
     emit_connection_state(&app, "disconnected");
     Ok(())
 }

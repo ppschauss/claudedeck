@@ -1,7 +1,9 @@
 mod commands;
 mod error;
+mod reconnect_supervisor;
 mod state;
 
+use reconnect_supervisor::ReconnectSupervisor;
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -9,6 +11,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::new())
+        .manage(ReconnectSupervisor::new())
         .invoke_handler(tauri::generate_handler![
             commands::connect,
             commands::accept_hostkey_and_connect,
@@ -33,6 +36,10 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // Task 6: Reconnect-Supervisor + periodischer Keepalive laufen für die gesamte
+            // App-Lebensdauer, unabhängig vom aktuellen Verbindungsstatus (siehe
+            // `reconnect_supervisor::spawn`).
+            reconnect_supervisor::spawn(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
