@@ -56,11 +56,19 @@
   font-size: 13px;
 }
 
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
 .session-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -68,6 +76,54 @@
   text-align: left;
   cursor: pointer;
   color: var(--text);
+}
+
+.session-menu-trigger {
+  flex: none;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.session-menu-trigger:hover {
+  background: var(--bg-input);
+  color: var(--text-h);
+}
+
+.session-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.session-menu button {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.session-menu button:hover {
+  background: var(--bg-input);
+  color: var(--text-h);
 }
 
 .session-item:hover:not(:disabled) {
@@ -370,4 +426,117 @@
 
 .hostkey-changed-box button {
   align-self: flex-start;
+}
+
+/* ---------------------------------------------------------------------------------------
+   Scrollback-Suche (Task 6, Strg+F)
+   --------------------------------------------------------------------------------------- */
+
+.search-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.search-bar input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.search-bar button {
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.search-bar button:hover {
+  background: var(--bg-input);
+  color: var(--text-h);
+}
+
+/* ---------------------------------------------------------------------------------------
+   Reconnect-Overlay (Task 6)
+   --------------------------------------------------------------------------------------- */
+
+.reconnect-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn-border);
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.reconnect-banner button {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  color: var(--text-h);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.reconnect-failed-box {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+/* ---------------------------------------------------------------------------------------
+   Toasts (Task 6)
+   --------------------------------------------------------------------------------------- */
+
+.toast-host {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--text-h);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.toast button {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
 }

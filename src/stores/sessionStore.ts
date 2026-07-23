@@ -46,11 +46,22 @@ export interface SessionState {
    * intakt. `activated()` funktioniert unverändert auch auf einer lost-Session. No-Op für
    * unbekannte sessionId. */
   markLost: (sessionId: string) => void;
+  /** Task 6, Auflage C: Gegenstück zu `markLost` — Re-Attach nach erfolgreichem Reconnect
+   * (`session-reattached`-Event) setzt `lost` zurück auf `false`. Sidebar zeigt dadurch wieder
+   * `●` statt `⚠`, ohne dass `Sidebar.tsx` selbst etwas über Reconnect wissen muss. No-Op für
+   * unbekannte sessionId. Setzt KEINE Activity/Badge zurück (das macht bei Bedarf weiterhin
+   * `activated()`) — ein Re-Attach allein macht eine Hintergrund-Session nicht aktiv. */
+  reattached: (sessionId: string) => void;
   /** Session aus `openSessions` entfernen (Detach/Exit). War sie aktiv, wird `activeSessionId`
    * auf `null` gesetzt — welche Session danach angezeigt wird, entscheidet die UI (Task 5). */
   closed: (sessionId: string) => void;
   /** Kehrt `notifyEnabled` für die Session um (Kontextmenü "Benachrichtigungen aus"). */
   notifyToggled: (sessionId: string) => void;
+  /** Task 6: markiert die Session als "für den aktuellen Wartezyklus bereits benachrichtigt"
+   * (`NotificationManager` nach einem gesendeten `sendNotification`). Verhindert eine zweite
+   * Notification für denselben Zyklus, bis neuer Output (`onOutput` in `badges.ts`) `notified`
+   * wieder zurücksetzt. No-Op für unbekannte sessionId. */
+  notifiedSent: (sessionId: string) => void;
 }
 
 const freshActivity = (): Activity => ({ badge: 0, lastOutputAt: null, notified: false });
@@ -99,6 +110,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       return { openSessions };
     }),
 
+  reattached: (sessionId) =>
+    set((state) => {
+      const entry = state.openSessions.get(sessionId);
+      if (!entry) return {};
+      const openSessions = new Map(state.openSessions);
+      openSessions.set(sessionId, { ...entry, lost: false });
+      return { openSessions };
+    }),
+
   closed: (sessionId) =>
     set((state) => {
       if (!state.openSessions.has(sessionId)) return {};
@@ -114,6 +134,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       if (!entry) return {};
       const openSessions = new Map(state.openSessions);
       openSessions.set(sessionId, { ...entry, notifyEnabled: !entry.notifyEnabled });
+      return { openSessions };
+    }),
+
+  notifiedSent: (sessionId) =>
+    set((state) => {
+      const entry = state.openSessions.get(sessionId);
+      if (!entry) return {};
+      const openSessions = new Map(state.openSessions);
+      openSessions.set(sessionId, { ...entry, activity: { ...entry.activity, notified: true } });
       return { openSessions };
     }),
 }));

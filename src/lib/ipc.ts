@@ -30,7 +30,9 @@
  *
  * Events (Rust `app.emit(name, payload)` → Frontend `listen(name, …)`), Payload-Felder sind
  * bereits camelCase (`#[serde(rename_all = "camelCase")]` auf den jeweiligen Event-Structs):
- * `connection-state`, `pty-exit`, `sessions-changed`.
+ * `connection-state`, `pty-exit`, `sessions-changed`, `session-reattached` (Task 6, Auflage C —
+ * erweitert den im Plan dokumentierten Contract um genau dieses eine Event; siehe
+ * `reconnect_supervisor.rs`/`commands/sessions.rs::reattach_lost_sessions`).
  *
  * ## Sonderfall `Config`/`Profile`/`NotifySettings`/`AuthMethod` (`get_config`/`set_config`)
  *
@@ -170,6 +172,13 @@ export interface PtyExitEvent {
   reason: "exited" | "connectionLost";
 }
 
+/** Payload des `session-reattached`-Events (Task 6). Backend hat serverseitig ein neues PTY auf
+ * denselben Channel gelegt — Frontend muss nur noch `sessionStore.reattached(sessionId)` rufen,
+ * TermPool/Channel-Callback laufen unverändert weiter (kein erneutes `open_session`). */
+export interface SessionReattachedEvent {
+  sessionId: string;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------------------------
@@ -264,4 +273,10 @@ export function onPtyExit(handler: (event: PtyExitEvent) => void): Promise<Unlis
 
 export function onSessionsChanged(handler: () => void): Promise<UnlistenFn> {
   return listen<void>("sessions-changed", () => handler());
+}
+
+export function onSessionReattached(
+  handler: (event: SessionReattachedEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<SessionReattachedEvent>("session-reattached", (e) => handler(e.payload));
 }

@@ -149,6 +149,54 @@ describe("markLost", () => {
   });
 });
 
+describe("reattached", () => {
+  it("setzt lost zurück auf false für eine lost-Session", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().markLost("s1");
+    expect(useSessionStore.getState().openSessions.get("s1")?.lost).toBe(true);
+    useSessionStore.getState().reattached("s1");
+    expect(useSessionStore.getState().openSessions.get("s1")?.lost).toBe(false);
+  });
+
+  it("ist ein No-Op für eine unbekannte sessionId", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    expect(() => useSessionStore.getState().reattached("unbekannt")).not.toThrow();
+    expect(useSessionStore.getState().openSessions.size).toBe(1);
+  });
+
+  it("lässt eine bereits nicht-lost Session unverändert (idempotent)", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().reattached("s1");
+    expect(useSessionStore.getState().openSessions.get("s1")?.lost).toBe(false);
+  });
+});
+
+describe("notifiedSent", () => {
+  it("setzt activity.notified auf true", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().opened("s2", "cc-b"); // s1 im Hintergrund
+    useSessionStore.getState().outputReceived("s1", 1000);
+    expect(useSessionStore.getState().openSessions.get("s1")?.activity.notified).toBe(false);
+    useSessionStore.getState().notifiedSent("s1");
+    expect(useSessionStore.getState().openSessions.get("s1")?.activity.notified).toBe(true);
+  });
+
+  it("ist ein No-Op für eine unbekannte sessionId", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    expect(() => useSessionStore.getState().notifiedSent("unbekannt")).not.toThrow();
+    expect(useSessionStore.getState().openSessions.get("s1")?.activity.notified).toBe(false);
+  });
+
+  it("neuer Output setzt notified wieder zurück (neuer Benachrichtigungszyklus)", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().opened("s2", "cc-b");
+    useSessionStore.getState().outputReceived("s1", 1000);
+    useSessionStore.getState().notifiedSent("s1");
+    useSessionStore.getState().outputReceived("s1", 5000);
+    expect(useSessionStore.getState().openSessions.get("s1")?.activity.notified).toBe(false);
+  });
+});
+
 describe("notifyToggled", () => {
   it("kehrt notifyEnabled für die gegebene Session um", () => {
     useSessionStore.getState().opened("s1", "cc-a");

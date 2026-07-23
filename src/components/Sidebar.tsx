@@ -4,10 +4,17 @@
  * bekannt, aber noch nicht angehängt, Klick ruft `open_session`) und + startbar (Projekte aus
  * den `scan_paths`, Klick ruft `start_project`). Aktualisiert sich bei `sessions-changed` und
  * beim Zurückkommen des Fenster-Fokus.
+ *
+ * Task 6 ergänzt ein Kontextmenü ("⋮") pro angehängter Session: Benachrichtigungen aus/ein
+ * (`notifyToggled`), Detach (`closeSession` + lokale Aufräumung, spiegelbildlich zum
+ * "exited"-Zweig in `TerminalHost.tsx`s `pty-exit`-Handler) und Kill (`kill_session` nach
+ * `window.confirm`). `start_project`-Fehler laufen als Toast statt (nur) als Inline-Text.
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   b64ToBytes,
+  closeSession,
+  killSession,
   listSessions,
   onSessionsChanged,
   openSession,
@@ -20,8 +27,10 @@ import {
 import { describeApiError } from "../lib/apiError";
 import { findOpenByName } from "../lib/attachGuard";
 import { debounceTrailing } from "../lib/debounce";
+import { nextActiveSessionId } from "../lib/sessionSwitch";
 import * as termPool from "../lib/termPool";
 import { useSessionStore } from "../stores/sessionStore";
+import { useToastStore } from "../stores/toastStore";
 
 // Fix 3 (Review-Fund M4-Task-5): der `fit()`-Aufruf in `TerminalHost`s `ResizeObserver` bleibt
 // unverändert sofort/ungedrosselt (reine Layout-Anpassung, kein IPC) — aber das dadurch
@@ -91,6 +100,7 @@ export function Sidebar() {
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -125,6 +135,19 @@ export function Sidebar() {
       unlisten?.();
     };
   }, [refresh]);
+
+  // Kontextmenü schließen bei Klick außerhalb (einfaches Dropdown, kein Popover-API-Overkill).
+  useEffect(() => {
+    if (!menuOpenFor) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".session-menu") && !target.closest(".session-menu-trigger")) {
+        setMenuOpenFor(null);
+      }
+    }
+    window.addEventListener("mousedown", handleClick);
+    return () => window.removeEventListener("mousedown", handleClick);
+  }, [menuOpenFor]);
 
   const openNames = useMemo(() => {
     const names = new Set<string>();
@@ -171,7 +194,6 @@ export function Sidebar() {
 
   async function handleStart(project: Project) {
     setBusyKey(project.path);
-    setError(null);
     try {
       await attachAndTrack((onOutput) =>
         startProject(project.path, FALLBACK_COLS, FALLBACK_ROWS, onOutput),
@@ -181,9 +203,46 @@ export function Sidebar() {
       // stehen, bis der nächste Fensterfokus oder ein Fremd-Event nachlädt.
       void refresh();
     } catch (err) {
-      setError(describeApiError(err));
+      // Task 6: start_project-Fehler (z.B. tmuxMissing) als Toast statt Inline-Text.
+      useToastStore.getState().push(describeApiError(err));
     } finally {
       setBusyKey(null);
+    }
+  }
+
+  function handleToggleMenu(sessionId: string) {
+    setMenuOpenFor((cur) => (cur === sessionId ? null : sessionId));
+  }
+
+  function handleToggleNotify(sessionId: string) {
+    useSessionStore.getState().notifyToggled(sessionId);
+    setMenuOpenFor(null);
+  }
+
+  async function handleDetach(sessionId: string) {
+    setMenuOpenFor(null);
+    const state = useSessionStore.getState();
+    const wasActive = state.activeSessionId === sessionId;
+    const orderedIds = Array.from(state.openSessions.keys());
+    const next = nextActiveSessionId(orderedIds, sessionId);
+
+    await closeSession(sessionId);
+    termPool.dispose(sessionId);
+    state.closed(sessionId);
+    if (wasActive && next) useSessionStore.getState().activated(next);
+  }
+
+  async function handleKill(name: string) {
+    setMenuOpenFor(null);
+    if (!window.confirm(`Session „${name}“ wirklich beenden (tmux kill-session)?`)) return;
+    try {
+      await killSession(name);
+      // kill_session emittiert `sessions-changed` (Refresh der "Läuft"-Liste); ein evtl. noch
+      // angehängtes Terminal räumt sich selbst über das reguläre `pty-exit{reason:"exited"}`
+      // aus dem echten Prozessende auf (TerminalHost.tsx) — kein manuelles `closed()` hier
+      // nötig, sonst würde die Session doppelt entfernt/das Notice fehlen.
+    } catch (err) {
+      useToastStore.getState().push(describeApiError(err));
     }
   }
 
@@ -195,7 +254,7 @@ export function Sidebar() {
         {attached.length === 0 && <p className="sidebar-empty">–</p>}
         <ul>
           {attached.map(([sessionId, s]) => (
-            <li key={sessionId}>
+            <li key={sessionId} className="session-row">
               <button
                 type="button"
                 className={sessionId === activeSessionId ? "session-item active" : "session-item"}
@@ -210,6 +269,27 @@ export function Sidebar() {
                 <span className="session-name">{s.name}</span>
                 {s.activity.badge > 0 && <span className="badge">{s.activity.badge}</span>}
               </button>
+              <button
+                type="button"
+                className="session-menu-trigger"
+                aria-label={`Menü für ${s.name}`}
+                onClick={() => handleToggleMenu(sessionId)}
+              >
+                ⋮
+              </button>
+              {menuOpenFor === sessionId && (
+                <div className="session-menu">
+                  <button type="button" onClick={() => handleToggleNotify(sessionId)}>
+                    Benachrichtigungen {s.notifyEnabled ? "aus" : "ein"}
+                  </button>
+                  <button type="button" onClick={() => void handleDetach(sessionId)}>
+                    Detach
+                  </button>
+                  <button type="button" onClick={() => void handleKill(s.name)}>
+                    Kill
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
