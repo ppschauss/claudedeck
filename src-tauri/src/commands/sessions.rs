@@ -1,11 +1,19 @@
 //! Session-Streaming-Commands (Kern von M4): `list_sessions`, `open_session`,
 //! `start_project`, `write_session`, `resize_session`, `close_session`, `kill_session`.
 //!
-//! PTY-Ownership: `SessionEntry.pty` (siehe `state.rs`) ist ein volles, unwrapped
-//! `PtyHandle` — es gibt bewusst KEINEN zweiten, session-eigenen Lock. Der einzige
-//! `AppState`-Mutex schützt sowohl `conn` als auch die Session-Map; `write`/`resize`
-//! locken ihn kurz für die Dauer des jeweiligen Awaits. `close_session` nimmt den Eintrag
-//! aus der Map und übergibt ihn (per `move`) an einen separaten `tokio::spawn` — `close()`
+//! Lock-Disziplin (Fix Critical, siehe `state.rs`): JEDER Command lockt `AppState` nur kurz,
+//! um ein `Arc<SshConnection>` bzw. `Arc<Mutex<Option<PtyHandle>>>` zu klonen oder einen
+//! Map-Eintrag zu holen/einzufügen — der Guard wird VOR jedem SSH-Await gedroppt (entweder
+//! durch einen eigenen `{ }`-Block oder weil der Lock-Ausdruck als Statement endet). SSH-Calls
+//! (`exec_capture`, `open_pty`, `pty.write`/`resize`) laufen ausschließlich außerhalb des
+//! `AppState`-Locks. `write_session`/`resize_session` locken zusätzlich NUR den
+//! Session-eigenen `tokio::Mutex` (`SessionEntry.pty`) — paralleles Schreiben in verschiedene
+//! Sessions blockiert sich damit nicht mehr gegenseitig. `pty.write`/`pty.resize` laufen unter
+//! einem 10s-`tokio::time::timeout`; ein Timeout wird als `ApiError::Io{"Timeout ..."}`
+//! gemeldet, statt den aufrufenden Task unbegrenzt hängen zu lassen.
+//!
+//! `close_session` nimmt den Eintrag aus der Map, setzt `closing` (siehe Forwarder unten) und
+//! `take()`t den `PtyHandle` aus dem Session-Mutex in einem separaten `tokio::spawn` — `close()`
 //! kann laut `pty.rs`-Doku bis zu 2s dauern und darf den Command-Aufruf nie blockieren
 //! (Global Constraint).
 //!
@@ -13,11 +21,17 @@
 //! `start_project`): liest `PtyEvent`s aus `take_output()`, batcht Bytes über die reine
 //! Entscheidungsfunktion `claudedeck_core::util::should_flush` (>=32 KiB ODER >=10ms seit
 //! dem ersten ungeflushten Byte) und sendet den Batch base64-kodiert über den
-//! `Channel<OutputChunk>` ans Frontend. Bei `PtyEvent::Exit` wird der Restpuffer geflusht,
-//! `pty-exit` emittiert und die Session aus der State-Map entfernt.
+//! `Channel<OutputChunk>` ans Frontend. Bei `PtyEvent::Exit` wird der Restpuffer geflusht; ob
+//! `pty-exit` emittiert wird, hängt vom `closing`-Flag ab (Fix Important — siehe
+//! `spawn_forwarder`): bei einem selbst ausgelösten Detach (`close_session` hat `closing`
+//! bereits gesetzt) wird NICHT emittiert, weil das Frontend sonst fälschlich "Prozess beendet"
+//! anzeigen würde, obwohl der Nutzer nur detached hat. Der Map-Eintrag wird in jedem Fall
+//! (idempotent) entfernt.
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use data_encoding::BASE64;
@@ -36,6 +50,11 @@ use claudedeck_core::util::should_flush;
 
 use crate::error::ApiError;
 use crate::state::{AppInner, AppState, SessionEntry};
+
+/// Timeout für `pty.write`/`pty.resize` (Fix Critical, Timeout-Härtung im Hot-Path) — ein
+/// hängender SSH-Await auf einer einzelnen Session soll dem Aufrufer nach spätestens dieser
+/// Zeit einen sichtbaren Fehler geben statt den Tauri-Command-Aufruf unbegrenzt offen zu lassen.
+const SESSION_IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Ein Output-Batch für `Channel<OutputChunk>` — `data_b64` wird über serdes
 /// `rename_all = "camelCase"` zu `dataB64`, wie im IPC-Contract festgelegt.
@@ -109,8 +128,31 @@ fn not_connected() -> ApiError {
     }
 }
 
-fn require_conn(inner: &AppInner) -> Result<&SshConnection, ApiError> {
-    inner.conn.as_ref().ok_or_else(not_connected)
+/// Klont das `Arc<SshConnection>` aus dem State — der Aufrufer hält den `AppInner`-Guard nur für
+/// diesen einen Klon und droppt ihn danach, bevor er mit dem `Arc` einen SSH-Await macht (Fix
+/// Critical: der globale Lock wird nie über einen SSH-Await gehalten).
+fn require_conn(inner: &AppInner) -> Result<Arc<SshConnection>, ApiError> {
+    inner.conn.clone().ok_or_else(not_connected)
+}
+
+/// Fix Minor (Fix 3): für eine unbekannte/bereits geschlossene `session_id` bewusst
+/// `ApiError::Io` statt `ApiError::NotConnected` — Letzteres ist im IPC-Contract für "keine
+/// SSH-Verbindung" reserviert (siehe `require_conn`/`not_connected`); eine unbekannte Session
+/// ist ein anderer Fehlerfall und würde das Frontend fälschlich zum Reconnect-Dialog schicken.
+/// Eine eigene Contract-Variante extra dafür einzuführen wäre für diesen einen Fehlerfall
+/// Overkill — `ApiError::Io` mit stabiler, sprechender Message ist Contract-kompatibel; das
+/// Frontend kann bei Bedarf über `message` unterscheiden (kein `kind` nötig).
+fn session_not_found(session_id: &str) -> ApiError {
+    ApiError::Io {
+        message: format!("Session {session_id} nicht gefunden"),
+    }
+}
+
+/// Fix Critical (Timeout-Härtung): Message für einen abgelaufenen `pty.write`/`pty.resize`.
+fn io_timeout(op: &str) -> ApiError {
+    ApiError::Io {
+        message: format!("Timeout beim {op}"),
+    }
 }
 
 /// Übersetzt jeden Fehler mit `Display` (in der Praxis: `russh::Error`) in eine generische
@@ -159,11 +201,18 @@ async fn running_sessions(conn: &SshConnection) -> Result<Vec<SessionInfo>, ApiE
 /// Batcht `PtyEvent`s aus `rx` und sendet sie base64-kodiert über `channel`. Läuft als
 /// eigener `tokio::spawn`-Task, solange die Session offen ist; endet, sobald `PtyEvent::Exit`
 /// eintrifft (oder der Sender — der PTY-Reader-Task — ohne vorheriges `Exit` wegfällt).
+///
+/// `closing` (Fix Important): dasselbe `Arc<AtomicBool>`, das auch in der `SessionEntry` liegt
+/// und von `close_session` VOR dem Schließen gesetzt wird. Ist es beim `PtyEvent::Exit` bereits
+/// `true`, war der Exit die erwartete Folge eines selbst ausgelösten Detach (nicht ein
+/// fremdverursachtes Prozessende) — dann wird `pty-exit` NICHT emittiert, aber trotzdem
+/// geflusht und der (meist schon fehlende) Map-Eintrag idempotent entfernt.
 fn spawn_forwarder(
     app: AppHandle,
     session_id: String,
     mut rx: mpsc::Receiver<PtyEvent>,
     channel: Channel<OutputChunk>,
+    closing: Arc<AtomicBool>,
 ) {
     fn flush(buf: &mut Vec<u8>, channel: &Channel<OutputChunk>) {
         if buf.is_empty() {
@@ -207,10 +256,17 @@ fn spawn_forwarder(
                         }
                         Some(PtyEvent::Exit(_)) => {
                             flush(&mut buf, &channel);
-                            let _ = app.emit(
-                                "pty-exit",
-                                PtyExitEvent { session_id: session_id.clone(), reason: "exited" },
-                            );
+                            // Fix Important: kein `pty-exit` bei selbst ausgelöstem Detach —
+                            // siehe Doku oben und an `SessionEntry::closing`.
+                            if !closing.load(Ordering::SeqCst) {
+                                let _ = app.emit(
+                                    "pty-exit",
+                                    PtyExitEvent { session_id: session_id.clone(), reason: "exited" },
+                                );
+                            }
+                            // `remove` ist ein No-op, falls `close_session` den Eintrag schon
+                            // entfernt hat (Detach-Fall) — sonst räumt es hier den durch ein
+                            // echtes Prozessende verwaisten Eintrag auf.
                             app.state::<AppState>().lock().await.sessions.remove(&session_id);
                             return;
                         }
@@ -236,15 +292,17 @@ fn spawn_forwarder(
 
 #[tauri::command]
 pub async fn list_sessions(state: State<'_, AppState>) -> Result<SessionList, ApiError> {
-    let inner = state.lock().await;
-    let running = running_sessions(require_conn(&inner)?).await?;
+    let conn = {
+        let inner = state.lock().await;
+        require_conn(&inner)?
+    };
+    let running = running_sessions(&conn).await?;
 
     let cfg = config::load_from(&config::config_path());
-    let scan_out = require_conn(&inner)?
+    let scan_out = conn
         .exec_capture(&tmux_cmd::cmd_scan_projects(&cfg.scan_paths))
         .await
         .map_err(ssh_to_api)?;
-    drop(inner);
 
     let running_names: HashSet<String> = running.iter().map(|s| s.name.clone()).collect();
 
@@ -281,19 +339,33 @@ pub async fn open_session(
     rows: u16,
     on_output: Channel<OutputChunk>,
 ) -> Result<String, ApiError> {
-    let mut inner = state.lock().await;
-    let mut pty = require_conn(&inner)?
+    let conn = {
+        let inner = state.lock().await;
+        require_conn(&inner)?
+    };
+    let mut pty = conn
         .open_pty(&tmux_cmd::cmd_attach(&name), cols as u32, rows as u32)
         .await
         .map_err(ssh_to_api)?;
     let output_rx = pty.take_output();
-    let session_id = inner.alloc_session_id();
-    inner
-        .sessions
-        .insert(session_id.clone(), SessionEntry { pty, name });
-    drop(inner);
+    let closing = Arc::new(AtomicBool::new(false));
+    let pty_arc = Arc::new(tokio::sync::Mutex::new(Some(pty)));
 
-    spawn_forwarder(app, session_id.clone(), output_rx, on_output);
+    let session_id = {
+        let mut inner = state.lock().await;
+        let session_id = inner.alloc_session_id();
+        inner.sessions.insert(
+            session_id.clone(),
+            SessionEntry {
+                pty: pty_arc,
+                closing: closing.clone(),
+                name,
+            },
+        );
+        session_id
+    };
+
+    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing);
     Ok(session_id)
 }
 
@@ -306,9 +378,12 @@ pub async fn start_project(
     rows: u16,
     on_output: Channel<OutputChunk>,
 ) -> Result<StartResult, ApiError> {
-    let mut inner = state.lock().await;
+    let conn = {
+        let inner = state.lock().await;
+        require_conn(&inner)?
+    };
 
-    let running = running_sessions(require_conn(&inner)?).await?;
+    let running = running_sessions(&conn).await?;
     let existing: HashSet<String> = running.iter().map(|s| s.name.clone()).collect();
 
     let basename = Path::new(&path)
@@ -319,7 +394,7 @@ pub async fn start_project(
     let session_name =
         names::resolve_collision(&format!("cc-{}", names::sanitize(&basename)), &existing);
 
-    let new_out = require_conn(&inner)?
+    let new_out = conn
         .exec_capture(&tmux_cmd::cmd_new_detached(&session_name, &path, "claude"))
         .await
         .map_err(ssh_to_api)?;
@@ -330,7 +405,7 @@ pub async fn start_project(
         });
     }
 
-    let mut pty = require_conn(&inner)?
+    let mut pty = conn
         .open_pty(
             &tmux_cmd::cmd_attach(&session_name),
             cols as u32,
@@ -339,17 +414,24 @@ pub async fn start_project(
         .await
         .map_err(ssh_to_api)?;
     let output_rx = pty.take_output();
-    let session_id = inner.alloc_session_id();
-    inner.sessions.insert(
-        session_id.clone(),
-        SessionEntry {
-            pty,
-            name: session_name.clone(),
-        },
-    );
-    drop(inner);
+    let closing = Arc::new(AtomicBool::new(false));
+    let pty_arc = Arc::new(tokio::sync::Mutex::new(Some(pty)));
 
-    spawn_forwarder(app, session_id.clone(), output_rx, on_output);
+    let session_id = {
+        let mut inner = state.lock().await;
+        let session_id = inner.alloc_session_id();
+        inner.sessions.insert(
+            session_id.clone(),
+            SessionEntry {
+                pty: pty_arc,
+                closing: closing.clone(),
+                name: session_name.clone(),
+            },
+        );
+        session_id
+    };
+
+    spawn_forwarder(app, session_id.clone(), output_rx, on_output, closing);
     Ok(StartResult {
         session_id,
         session_name,
@@ -368,15 +450,25 @@ pub async fn write_session(
             message: format!("ungültiges Base64 in write_session: {e}"),
         })?;
 
-    let mut inner = state.lock().await;
-    let entry = inner
-        .sessions
-        .get_mut(&session_id)
-        .ok_or_else(|| ApiError::NotConnected {
-            message: format!("Session {session_id} nicht gefunden"),
-        })?;
-    entry.pty.write(&bytes).await?;
-    Ok(())
+    // Fix Critical: nur den `Arc` klonen und den State-Lock sofort wieder freigeben — der
+    // eigentliche Schreib-Await läuft danach ausschließlich gegen den Session-eigenen Mutex.
+    let pty = {
+        let inner = state.lock().await;
+        inner
+            .sessions
+            .get(&session_id)
+            .map(|e| e.pty.clone())
+            .ok_or_else(|| session_not_found(&session_id))?
+    };
+
+    let mut guard = pty.lock().await;
+    let handle = guard
+        .as_mut()
+        .ok_or_else(|| session_not_found(&session_id))?;
+    match tokio::time::timeout(SESSION_IO_TIMEOUT, handle.write(&bytes)).await {
+        Ok(res) => res.map_err(ApiError::from),
+        Err(_) => Err(io_timeout("Schreiben in Session")),
+    }
 }
 
 #[tauri::command]
@@ -386,18 +478,23 @@ pub async fn resize_session(
     cols: u16,
     rows: u16,
 ) -> Result<(), ApiError> {
-    let inner = state.lock().await;
-    let entry = inner
-        .sessions
-        .get(&session_id)
-        .ok_or_else(|| ApiError::NotConnected {
-            message: format!("Session {session_id} nicht gefunden"),
-        })?;
-    entry
-        .pty
-        .resize(cols as u32, rows as u32)
-        .await
-        .map_err(ssh_to_api)
+    let pty = {
+        let inner = state.lock().await;
+        inner
+            .sessions
+            .get(&session_id)
+            .map(|e| e.pty.clone())
+            .ok_or_else(|| session_not_found(&session_id))?
+    };
+
+    let guard = pty.lock().await;
+    let handle = guard
+        .as_ref()
+        .ok_or_else(|| session_not_found(&session_id))?;
+    match tokio::time::timeout(SESSION_IO_TIMEOUT, handle.resize(cols as u32, rows as u32)).await {
+        Ok(res) => res.map_err(ssh_to_api),
+        Err(_) => Err(io_timeout("Resize der Session")),
+    }
 }
 
 /// Detach: `pty.close()` läuft in einem eigenen `tokio::spawn` (kann laut `pty.rs` bis zu 2s
@@ -406,12 +503,28 @@ pub async fn resize_session(
 /// endet. Wie `disconnect` (Task 2) `Result<(), ()>` statt `()`: async Commands mit
 /// `State<'_, _>`-Argument müssen laut Tauri `Result` liefern, auch wenn der IPC-Contract für
 /// das Frontend nur `-> ()` vorsieht (löst immer auf, nie ein `Err`).
+///
+/// Fix Important: `closing` wird VOR dem Spawn gesetzt, nicht erst darin — der Forwarder-Task
+/// kann das `PtyEvent::Exit`, das `pty.close()` auslöst, jederzeit danach empfangen und muss
+/// das Flag dann bereits auf `true` sehen (siehe `spawn_forwarder`). Der Eintrag wird sofort
+/// aus der Map entfernt (der Forwarder greift beim eigentlichen `close()`-Exit also ins Leere —
+/// `remove` ist dort ein dokumentiertes No-op), der `PtyHandle` wird erst im Spawn aus dem
+/// Session-Mutex `take()`n, damit ein parallel laufender `write_session`/`resize_session`
+/// seinen bereits gehaltenen Lock zuerst normal beenden kann statt auf `Arc::try_unwrap` zu
+/// warten (das könnte je nach Timing scheitern).
 #[tauri::command]
 pub async fn close_session(state: State<'_, AppState>, session_id: String) -> Result<(), ()> {
-    let mut inner = state.lock().await;
-    if let Some(entry) = inner.sessions.remove(&session_id) {
+    let entry = {
+        let mut inner = state.lock().await;
+        inner.sessions.remove(&session_id)
+    };
+    if let Some(entry) = entry {
+        entry.closing.store(true, Ordering::SeqCst);
         tokio::spawn(async move {
-            let _ = entry.pty.close().await;
+            let handle = entry.pty.lock().await.take();
+            if let Some(handle) = handle {
+                let _ = handle.close().await;
+            }
         });
     }
     Ok(())
@@ -423,12 +536,14 @@ pub async fn kill_session(
     state: State<'_, AppState>,
     name: String,
 ) -> Result<(), ApiError> {
-    let inner = state.lock().await;
-    let out = require_conn(&inner)?
+    let conn = {
+        let inner = state.lock().await;
+        require_conn(&inner)?
+    };
+    let out = conn
         .exec_capture(&tmux_cmd::cmd_kill(&name))
         .await
         .map_err(ssh_to_api)?;
-    drop(inner);
 
     check_tmux_exit(&out)?;
     if !out.success() {

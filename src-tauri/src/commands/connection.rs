@@ -13,6 +13,7 @@ use claudedeck_core::secrets::{KeyringStore, SecretKind, SecretStore};
 use claudedeck_core::ssh::{Auth, ConnectParams, HostkeyPolicy, SshConnection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::ApiError;
@@ -118,7 +119,10 @@ async fn do_connect(
 
     match SshConnection::connect(params).await {
         Ok(conn) => {
-            state.lock().await.conn = Some(conn);
+            // `Arc`, nicht die nackte `SshConnection` — Fix Critical (siehe `state.rs`):
+            // Commands klonen nur dieses `Arc` unterm State-Lock und awaiten SSH-Operationen
+            // danach außerhalb des Locks.
+            state.lock().await.conn = Some(Arc::new(conn));
             emit_connection_state(app, "connected");
             Ok(())
         }
