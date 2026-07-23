@@ -85,6 +85,22 @@ export function hide(sessionId: string): void {
   entry.el.style.display = "none";
 }
 
+/**
+ * Passt das Terminal von `sessionId` an seine aktuelle Host-Größe an (Task 5:
+ * `ResizeObserver` in `TerminalHost`) und liefert die resultierenden `cols`/`rows` zurück.
+ * Anders als `show()` OHNE Fokus-Diebstahl — ein reiner Größenwechsel (Fenster-Resize,
+ * Sidebar-Toggle) soll nicht den Fokus von woanders ins Terminal reißen. Ändert `fit()`
+ * tatsächlich `cols`/`rows`, feuert xterms eigenes `onResize` (in `ensure()` verdrahtet) und
+ * meldet die neue Größe darüber ans Backend — diese Funktion selbst löst keinen IPC-Call aus.
+ * No-Op (liefert `null`), falls `ensure()` für diese `sessionId` nie aufgerufen wurde.
+ */
+export function fit(sessionId: string): { cols: number; rows: number } | null {
+  const entry = pool.get(sessionId);
+  if (!entry) return null;
+  entry.fit.fit();
+  return { cols: entry.term.cols, rows: entry.term.rows };
+}
+
 /** Schreibt rohe PTY-Bytes direkt ins Terminal — `Terminal.write` akzeptiert `Uint8Array` und
  * puffert intern korrekt über an Chunk-Grenzen aufgetrennte UTF-8-Multibyte-Sequenzen hinweg. */
 export function write(sessionId: string, bytes: Uint8Array): void {
