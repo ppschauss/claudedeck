@@ -75,11 +75,17 @@ fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Au
             Ok(Auth::Password(password))
         }
         AuthMethod::Key => {
-            let key_path = profile.key_path.clone().ok_or_else(|| ApiError::AuthFailed {
-                message: "Kein Key-Pfad konfiguriert".to_string(),
-            })?;
+            let key_path = profile
+                .key_path
+                .clone()
+                .ok_or_else(|| ApiError::AuthFailed {
+                    message: "Kein Key-Pfad konfiguriert".to_string(),
+                })?;
             let passphrase = KeyringStore.get(PROFILE_ID, SecretKind::KeyPassphrase);
-            Ok(Auth::Key { path: PathBuf::from(key_path), passphrase })
+            Ok(Auth::Key {
+                path: PathBuf::from(key_path),
+                passphrase,
+            })
         }
     }
 }

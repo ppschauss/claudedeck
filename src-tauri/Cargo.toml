@@ -26,5 +26,6 @@ tauri = { version = "2.11.3" }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 claudedeck-core = { path = "../crates/claudedeck-core" }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "time", "rt"] }
 dirs = "6"
+data-encoding = "2"

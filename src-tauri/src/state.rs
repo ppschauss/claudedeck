@@ -49,7 +49,9 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(AppInner::default()) }
+        Self {
+            inner: Mutex::new(AppInner::default()),
+        }
     }
 
     /// Sperrt den inneren Zustand. Heißt bewusst nicht `inner()` — `tauri::State<'_, T>` hat

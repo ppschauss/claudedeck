@@ -17,6 +17,13 @@ pub fn run() {
             commands::set_config,
             commands::save_secret,
             commands::has_secret,
+            commands::list_sessions,
+            commands::open_session,
+            commands::start_project,
+            commands::write_session,
+            commands::resize_session,
+            commands::close_session,
+            commands::kill_session,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

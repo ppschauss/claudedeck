@@ -20,9 +20,15 @@ pub enum ApiError {
     #[error("{message}")]
     AuthFailed { message: String },
     #[error("{message}")]
-    HostkeyUnknown { message: String, fingerprint: String },
+    HostkeyUnknown {
+        message: String,
+        fingerprint: String,
+    },
     #[error("{message}")]
-    HostkeyChanged { message: String, fingerprint: String },
+    HostkeyChanged {
+        message: String,
+        fingerprint: String,
+    },
     #[error("{message}")]
     NotConnected { message: String },
     #[error("{message}")]
@@ -42,12 +48,14 @@ impl From<ConnectError> for ApiError {
         let message = err.to_string();
         match err {
             ConnectError::AuthFailed => ApiError::AuthFailed { message },
-            ConnectError::HostkeyUnknown { fingerprint } => {
-                ApiError::HostkeyUnknown { message, fingerprint }
-            }
-            ConnectError::HostkeyChanged { fingerprint } => {
-                ApiError::HostkeyChanged { message, fingerprint }
-            }
+            ConnectError::HostkeyUnknown { fingerprint } => ApiError::HostkeyUnknown {
+                message,
+                fingerprint,
+            },
+            ConnectError::HostkeyChanged { fingerprint } => ApiError::HostkeyChanged {
+                message,
+                fingerprint,
+            },
             ConnectError::Ssh(_) => ApiError::Ssh { message },
         }
     }
@@ -55,7 +63,9 @@ impl From<ConnectError> for ApiError {
 
 impl From<std::io::Error> for ApiError {
     fn from(err: std::io::Error) -> Self {
-        ApiError::Io { message: err.to_string() }
+        ApiError::Io {
+            message: err.to_string(),
+        }
     }
 }
 
@@ -82,7 +92,9 @@ mod tests {
 
     #[test]
     fn not_connected_serialisiert_ohne_fingerprint_feld() {
-        let err = ApiError::NotConnected { message: "nicht verbunden".to_string() };
+        let err = ApiError::NotConnected {
+            message: "nicht verbunden".to_string(),
+        };
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(
             json,
@@ -93,7 +105,9 @@ mod tests {
 
     #[test]
     fn tmux_missing_kind_ist_camel_case() {
-        let err = ApiError::TmuxMissing { message: "tmux fehlt".to_string() };
+        let err = ApiError::TmuxMissing {
+            message: "tmux fehlt".to_string(),
+        };
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["kind"], "tmuxMissing");
     }
@@ -109,7 +123,10 @@ mod tests {
 
     #[test]
     fn from_connect_error_hostkey_unknown_traegt_fingerprint() {
-        let api: ApiError = ConnectError::HostkeyUnknown { fingerprint: "SHA256:xyz".to_string() }.into();
+        let api: ApiError = ConnectError::HostkeyUnknown {
+            fingerprint: "SHA256:xyz".to_string(),
+        }
+        .into();
         match api {
             ApiError::HostkeyUnknown { fingerprint, .. } => assert_eq!(fingerprint, "SHA256:xyz"),
             other => panic!("erwartet HostkeyUnknown, war {other:?}"),
