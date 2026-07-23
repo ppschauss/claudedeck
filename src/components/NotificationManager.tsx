@@ -42,7 +42,8 @@ export function NotificationManager() {
       timers.delete(sessionId);
       const entry = useSessionStore.getState().openSessions.get(sessionId);
       if (!entry || !permittedRef.current) return;
-      if (!shouldNotify(entry.activity, Date.now(), entry.notifyEnabled, THRESHOLD_MS)) return;
+      if (!shouldNotify(entry.activity, Date.now(), entry.notifyEnabled, entry.lost, THRESHOLD_MS))
+        return;
       useSessionStore.getState().notifiedSent(sessionId);
       void sendNotification({ title: entry.name, body: "wartet auf Eingabe" });
     }

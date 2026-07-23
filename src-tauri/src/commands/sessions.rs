@@ -670,14 +670,26 @@ pub async fn kill_session(
 /// - `conn.open_pty(cmd_attach(name), …)` mit der zuletzt bekannten Größe (`SessionEntry::cols`/
 ///   `rows`, von `resize_session` nachgeführt) statt der ursprünglichen `open_session`-
 ///   Fallback-Größe.
-/// - Erfolg: neuer `PtyHandle` in den (leeren) `pty`-Slot, `closing`/`lost` zurück auf `false`,
-///   neuer Forwarder auf DEMSELBEN `Channel<OutputChunk>` (`SessionEntry::channel`, `Clone` —
-///   siehe `state.rs`) — das Frontend merkt vom Re-Attach nur das `session-reattached`-Event
-///   (`sessionStore.reattached()`, Auflage C), der Channel-Callback selbst läuft unverändert
-///   weiter.
+/// - Erfolg: neuer `PtyHandle` in den (leeren) `pty`-Slot, neuer Forwarder auf DEMSELBEN
+///   `Channel<OutputChunk>` (`SessionEntry::channel`, `Clone` — siehe `state.rs`) — das Frontend
+///   merkt vom Re-Attach nur das `session-reattached`-Event (`sessionStore.reattached()`,
+///   Auflage C), der Channel-Callback selbst läuft unverändert weiter.
 /// - Fehlschlag (z.B. die tmux-Session existiert serverseitig nicht mehr, weil sie während des
 ///   Ausfalls extern gekillt wurde): Eintrag endgültig entfernen, `pty-exit{reason:"exited"}`
 ///   statt eines Re-Attachs — robuster als eine für immer `lost` bleibende Zombie-Session.
+///
+/// Fix Important (Review-Fund Task 6, Race): `closing`/`lost` werden NICHT wiederverwendet —
+/// die bestehenden `Arc`s aus dem alten `SessionEntry` gehören noch dem ALTEN Forwarder-Task
+/// (der ist erst beendet, wenn er sein `PtyEvent::Exit` verarbeitet hat, was bei einem schnellen
+/// manuellen Reconnect durchaus erst NACH diesem Re-Attach passiert). Würde man dieselben Arcs
+/// auf `false` zurücksetzen und an den neuen Forwarder weitergeben, sähe der alte Forwarder
+/// `closing==false` beim eigenen `Exit` und würde das fälschlich als toten Transport werten
+/// (`trigger_loss()`) statt als sein eigenes, gewolltes Verstummen. Stattdessen werden für jede
+/// Session FRISCHE `Arc::new(AtomicBool::new(false))` alloziert, in den `SessionEntry` in der
+/// Map geschrieben (damit `write_session`/`resize_session`/`close_session` ab sofort diese
+/// neuen Arcs sehen) UND an den neuen Forwarder gegeben. Der alte Forwarder behält seine alten
+/// Arcs, die durch `mark_all_lost` bereits auf `true` stehen und dort bleiben — er ist damit
+/// inert, ganz gleich, wann sein `Exit` eintrifft.
 pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
     let conn = {
         let inner = state.lock().await;
@@ -692,8 +704,6 @@ pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
         String,
         String,
         Arc<tokio::sync::Mutex<Option<claudedeck_core::ssh::PtyHandle>>>,
-        Arc<AtomicBool>,
-        Arc<AtomicBool>,
         Channel<OutputChunk>,
         u32,
         u32,
@@ -708,8 +718,6 @@ pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
                     id.clone(),
                     e.name.clone(),
                     e.pty.clone(),
-                    e.closing.clone(),
-                    e.lost.clone(),
                     e.channel.clone(),
                     e.cols.load(Ordering::Relaxed),
                     e.rows.load(Ordering::Relaxed),
@@ -718,7 +726,7 @@ pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
             .collect()
     };
 
-    for (id, name, pty_arc, closing, lost_flag, channel, cols, rows) in lost_sessions {
+    for (id, name, pty_arc, channel, cols, rows) in lost_sessions {
         match conn
             .open_pty(&tmux_cmd::cmd_attach(&name), cols, rows)
             .await
@@ -726,8 +734,21 @@ pub(crate) async fn reattach_lost_sessions(app: &AppHandle, state: &AppState) {
             Ok(mut new_pty) => {
                 let output_rx = new_pty.take_output();
                 *pty_arc.lock().await = Some(new_pty);
-                closing.store(false, Ordering::SeqCst);
-                lost_flag.store(false, Ordering::SeqCst);
+
+                // Frische Arcs statt der alten, noch vom vorherigen Forwarder gehaltenen —
+                // siehe Fix-Doku oben. Sofort in den Map-Eintrag zurückschreiben, damit
+                // gleichzeitige write_session/resize_session/close_session-Aufrufe ab jetzt
+                // konsistent die neuen Arcs sehen.
+                let closing = Arc::new(AtomicBool::new(false));
+                let lost_flag = Arc::new(AtomicBool::new(false));
+                {
+                    let mut inner = state.lock().await;
+                    if let Some(entry) = inner.sessions.get_mut(&id) {
+                        entry.closing = closing.clone();
+                        entry.lost = lost_flag.clone();
+                    }
+                }
+
                 spawn_forwarder(
                     app.clone(),
                     id.clone(),

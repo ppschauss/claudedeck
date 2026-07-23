@@ -33,38 +33,43 @@ describe("onOutput", () => {
 describe("shouldNotify", () => {
   it("liefert false unterhalb der Schwelle (1,9s)", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
-    expect(shouldNotify(a, 1000 + 1900, true)).toBe(false);
+    expect(shouldNotify(a, 1000 + 1900, true, false)).toBe(false);
   });
 
   it("liefert true ab der Schwelle (2,1s)", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
-    expect(shouldNotify(a, 1000 + 2100, true)).toBe(true);
+    expect(shouldNotify(a, 1000 + 2100, true, false)).toBe(true);
   });
 
   it("liefert true exakt an der Schwelle (2,0s, >=)", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
-    expect(shouldNotify(a, 1000 + 2000, true)).toBe(true);
+    expect(shouldNotify(a, 1000 + 2000, true, false)).toBe(true);
   });
 
   it("kein zweites Mal, wenn bereits notified", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: true };
-    expect(shouldNotify(a, 1000 + 5000, true)).toBe(false);
+    expect(shouldNotify(a, 1000 + 5000, true, false)).toBe(false);
   });
 
   it("nie, wenn Notifications deaktiviert sind", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
-    expect(shouldNotify(a, 1000 + 5000, false)).toBe(false);
+    expect(shouldNotify(a, 1000 + 5000, false, false)).toBe(false);
   });
 
   it("nie, wenn noch kein Output stattfand (lastOutputAt === null)", () => {
     const a: Activity = { badge: 0, lastOutputAt: null, notified: false };
-    expect(shouldNotify(a, 999999, true)).toBe(false);
+    expect(shouldNotify(a, 999999, true, false)).toBe(false);
+  });
+
+  it("nie, wenn die Session lost ist (Fix Minor, Task 6) — auch sonst über der Schwelle", () => {
+    const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
+    expect(shouldNotify(a, 1000 + 5000, true, true)).toBe(false);
   });
 
   it("respektiert einen abweichenden thresholdMs-Parameter", () => {
     const a: Activity = { badge: 1, lastOutputAt: 1000, notified: false };
-    expect(shouldNotify(a, 1000 + 500, true, 400)).toBe(true);
-    expect(shouldNotify(a, 1000 + 300, true, 400)).toBe(false);
+    expect(shouldNotify(a, 1000 + 500, true, false, 400)).toBe(true);
+    expect(shouldNotify(a, 1000 + 300, true, false, 400)).toBe(false);
   });
 
   it("aktive Session: Badge bleibt 0 über onOutput, unabhängig von shouldNotify-Aufrufen", () => {
@@ -73,6 +78,6 @@ describe("shouldNotify", () => {
     // sichergestellt, dass onOutput für aktive Sessions den Badge nicht hochzählt.
     const a = onOutput(initial, 1000, true);
     expect(a.badge).toBe(0);
-    expect(shouldNotify(a, 1000 + 5000, true)).toBe(true);
+    expect(shouldNotify(a, 1000 + 5000, true, false)).toBe(true);
   });
 });

@@ -48,6 +48,19 @@ describe("decideSchedule (pure)", () => {
     expect(decision.toSchedule).toEqual([]);
   });
 
+  it("plant KEINEN Timer für eine lost-Session (Fix Minor, Task 6)", () => {
+    const openSessions = new Map([["s1", session({ lost: true })]]);
+    const decision = decideSchedule(openSessions, "s2", new Set());
+    expect(decision.toSchedule).toEqual([]);
+    expect(decision.toCancel).toEqual([]);
+  });
+
+  it("cancelt einen laufenden Timer, wenn die Session inzwischen lost wurde (Fix Minor, Task 6)", () => {
+    const openSessions = new Map([["s1", session({ lost: true })]]);
+    const decision = decideSchedule(openSessions, "s2", new Set(["s1"]));
+    expect(decision.toCancel).toEqual(["s1"]);
+  });
+
   it("plant KEINEN zweiten Timer für eine bereits geplante Session", () => {
     const openSessions = new Map([["s1", session()]]);
     const decision = decideSchedule(openSessions, "s2", new Set(["s1"]));

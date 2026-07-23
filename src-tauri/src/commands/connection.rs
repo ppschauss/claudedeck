@@ -132,6 +132,16 @@ fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Au
 /// Unterscheidung würde jeder erfolgreiche manuelle Reconnect-Klick, der knapp vor einem
 /// zeitgleichen Supervisor-Versuch gewinnt, sofort von genau diesem Supervisor-Versuch wieder
 /// zunichtegemacht (Connect → sofort erneuter Wipe+Connect-Flicker).
+///
+/// `opportunistic` steuert außerdem (Fix Important, Review-Fund Task 6), ob dieser Aufruf die
+/// `connection-state`-Events `"connecting"`/`"failed"` emittiert: NUR bei `false` (interaktiver
+/// Erst-Connect). Bei `true` treibt `run_recovery`s Backoff-Schleife die State-Machine selbst
+/// (`"reconnecting"` pro Versuch, `"failed"` nur einmal endgültig nach `AuthFailed`) — würde
+/// dieser Kern zusätzlich bei JEDEM einzelnen Supervisor-Versuch `"connecting"`/`"failed"`
+/// emittieren, würde das `failed`-Modal im Frontend bei jedem Retry kurz aufblitzen, statt dass
+/// der Nutzer einen durchgehenden `reconnecting`-Countdown sieht. `"connected"` bei Erfolg wird
+/// dagegen IMMER emittiert (auch `opportunistic`) — das ist das Signal, mit dem der Supervisor
+/// seine Schleife als beendet erkennt.
 pub(crate) async fn do_connect_core(
     app: &AppHandle,
     state: &AppState,
@@ -163,13 +173,23 @@ pub(crate) async fn do_connect_core(
         }
     }
 
-    emit_connection_state(app, "connecting");
+    // Fix Important (Review-Fund Task 6, UX): "connecting"/"failed" nur beim interaktiven
+    // Erst-Connect emittieren. Ein `opportunistic`-Aufruf kommt aus `run_recovery`s
+    // Backoff-Schleife, die die State-Machine selbst treibt (`reconnecting`/`failed`/
+    // `connected`, siehe `reconnect_supervisor.rs`) — ein zusätzliches `connecting`/`failed`
+    // aus jedem einzelnen Supervisor-Versuch würde das `failed`-Modal bei jedem Retry kurz
+    // aufblitzen lassen, statt dass der Nutzer den durchgehenden `reconnecting`-Countdown sieht.
+    if !opportunistic {
+        emit_connection_state(app, "connecting");
+    }
 
     let config = config::load_from(&config::config_path());
     let auth = match build_auth(&config.profile, password) {
         Ok(auth) => auth,
         Err(err) => {
-            emit_connection_state(app, "failed");
+            if !opportunistic {
+                emit_connection_state(app, "failed");
+            }
             return Err(err);
         }
     };
@@ -193,11 +213,16 @@ pub(crate) async fn do_connect_core(
             // einem normalen Erstconnect ist die Sessions-Map leer bzw. keine Session `lost`,
             // dann ist das ein No-Op.
             reattach_lost_sessions(app, state).await;
+            // "connected" bleibt UNBEDINGT (auch bei `opportunistic`) — der Supervisor selbst
+            // emittiert keinen eigenen Erfolgs-State, sondern verlässt sich genau auf dieses
+            // Event, um die Backoff-Schleife als beendet zu markieren (siehe `run_recovery`).
             emit_connection_state(app, "connected");
             Ok(())
         }
         Err(err) => {
-            emit_connection_state(app, "failed");
+            if !opportunistic {
+                emit_connection_state(app, "failed");
+            }
             Err(ApiError::from(err))
         }
     }

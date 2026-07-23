@@ -103,10 +103,22 @@ impl ReconnectSupervisor {
     }
 
     /// Weckt einen laufenden Backoff-`sleep` vorzeitig (manueller Retry). Sicher aufzurufen,
-    /// auch wenn der Supervisor gerade nicht in Recovery ist (No-Op, kein Effekt auf eine
-    /// spätere Runde).
+    /// auch wenn der Supervisor gerade nicht in Recovery ist — dann ein echtes No-Op.
+    ///
+    /// Fix Minor (Review-Fund Task 6): NUR notifien, wenn `in_recovery == true`. `Notify` merkt
+    /// sich einen `notify_one()` ohne wartenden Empfänger als Permit für den NÄCHSTEN
+    /// `notified().await`-Aufruf ("nachgeholt", entgegen der Doku-Aussage einer Vorversion
+    /// dieses Kommentars). Beim interaktiven Erst-Connect (`connect()` ruft `wake_retry()` bei
+    /// JEDEM Aufruf, auch wenn nie zuvor eine Recovery lief) würde dieses Permit sonst
+    /// unverbraucht liegen bleiben und beim ERSTEN künftigen Backoff-`sleep` einer echten
+    /// Recovery-Runde sofort einlösen — der erste Reconnect-Versuch würde dann seinen
+    /// Backoff-Sleep komplett überspringen, ohne dass der Nutzer tatsächlich den "Jetzt neu
+    /// verbinden"-Button gedrückt hätte. Der `in_recovery`-Check verhindert genau dieses liegen
+    /// gebliebene Permit.
     pub fn wake_retry(&self) {
-        self.retry_notify.notify_one();
+        if self.in_recovery.load(Ordering::SeqCst) {
+            self.retry_notify.notify_one();
+        }
     }
 
     /// Bricht eine laufende Recovery-Runde ab (aufgerufen von `disconnect()`). Sicher, auch

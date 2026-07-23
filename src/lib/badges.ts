@@ -28,19 +28,23 @@ export function onOutput(a: Activity, now: number, isActive: boolean): Activity 
 
 /**
  * Ob jetzt für eine Hintergrund-Session eine Notification geschickt werden soll: nur wenn
- * Notifications aktiviert sind, noch nicht benachrichtigt wurde, es überhaupt schon Output gab
- * und seit dem letzten Output mindestens `thresholdMs` vergangen sind (Standard 2000ms —
- * "wartet vermutlich auf Eingabe"). Ob eine Session aktiv ist, entscheidet nicht diese
- * Funktion, sondern der Aufrufer (Task 6: Notification-Timer läuft nur für
+ * Notifications aktiviert sind, die Session NICHT gerade `lost` ist (Fix Minor, Review-Fund
+ * Task 6 — eine Session, die auf Reconnect wartet, hat keinen laufenden Prozess, der "auf
+ * Eingabe wartet"; eine Notification dafür wäre irreführend und der Nutzer könnte ohnehin nicht
+ * antworten, solange die PTY noch nicht re-attacht ist), noch nicht benachrichtigt wurde, es
+ * überhaupt schon Output gab und seit dem letzten Output mindestens `thresholdMs` vergangen sind
+ * (Standard 2000ms — "wartet vermutlich auf Eingabe"). Ob eine Session aktiv ist, entscheidet
+ * nicht diese Funktion, sondern der Aufrufer (Task 6: Notification-Timer läuft nur für
  * Hintergrund-Sessions).
  */
 export function shouldNotify(
   a: Activity,
   now: number,
   enabled: boolean,
+  lost: boolean,
   thresholdMs = 2000,
 ): boolean {
-  if (!enabled || a.notified || a.lastOutputAt === null) {
+  if (!enabled || lost || a.notified || a.lastOutputAt === null) {
     return false;
   }
   return now - a.lastOutputAt >= thresholdMs;

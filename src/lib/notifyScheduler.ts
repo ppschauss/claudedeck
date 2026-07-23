@@ -21,15 +21,18 @@ export interface ScheduleDecision {
  * AKTUELL schon einen laufenden Timer hält.
  *
  * Eine Session ist "notification-würdig" (`eligible`), wenn sie im Hintergrund ist,
- * Notifications aktiviert hat, für den aktuellen Output-Zyklus noch nicht benachrichtigt wurde
- * und überhaupt schon Output hatte (`activity.lastOutputAt !== null` — dieselben
- * Vorbedingungen wie `badges.shouldNotify`, hier aber nur für die Timer-SET/CANCEL-Entscheidung,
- * nicht für den tatsächlichen Schwellenwert-Vergleich, der beim Timer-Feuern separat mit
- * `shouldNotify` geprüft wird).
+ * Notifications aktiviert hat, NICHT `lost` ist (Fix Minor, Review-Fund Task 6 — eine Session,
+ * die auf Reconnect wartet, wartet nicht "auf Eingabe"; ein Timer dafür wäre sowieso witzlos,
+ * weil `shouldNotify` beim Feuern ohnehin ablehnen würde, aber gar nicht erst einen laufenden
+ * Timer zu halten ist sauberer als einen zu planen, der garantiert nichts tut), für den
+ * aktuellen Output-Zyklus noch nicht benachrichtigt wurde und überhaupt schon Output hatte
+ * (`activity.lastOutputAt !== null` — dieselben Vorbedingungen wie `badges.shouldNotify`, hier
+ * aber nur für die Timer-SET/CANCEL-Entscheidung, nicht für den tatsächlichen
+ * Schwellenwert-Vergleich, der beim Timer-Feuern separat mit `shouldNotify` geprüft wird).
  *
  * - `eligible && !isScheduled` → `toSchedule` (neuer Timer nötig).
- * - `!eligible && isScheduled` → `toCancel` (Session wurde aktiv, notified, oder verlor
- *   `notifyEnabled` — ein laufender Timer wäre jetzt fehl am Platz).
+ * - `!eligible && isScheduled` → `toCancel` (Session wurde aktiv, notified, verlor
+ *   `notifyEnabled`, oder wurde `lost` — ein laufender Timer wäre jetzt fehl am Platz).
  * - Jede `scheduled`-sessionId, die es in `openSessions` gar nicht mehr gibt (Session
  *   geschlossen/detached), wird ebenfalls zu `toCancel` hinzugefügt (Leak-Schutz).
  */
@@ -45,6 +48,7 @@ export function decideSchedule(
     const eligible =
       id !== activeSessionId &&
       s.notifyEnabled &&
+      !s.lost &&
       !s.activity.notified &&
       s.activity.lastOutputAt !== null;
     const isScheduled = scheduled.has(id);
