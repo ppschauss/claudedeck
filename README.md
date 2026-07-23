@@ -1,8 +1,9 @@
 # ClaudeDeck
 
 Schlanke Windows-Desktop-App zum Verwalten von Claude-Code-Sessions auf einem Homelab-Server:
-verbindet sich per SSH, listet tmux-Sessions, öffnet sie als vollwertige Terminals (mehrere
-parallel über eine gemultiplexte Verbindung) und bietet ein SFTP-Seitenpanel für Up-/Downloads.
+verbindet sich per SSH, listet tmux-Sessions und öffnet sie als vollwertige Terminals (mehrere
+parallel über eine gemultiplexte Verbindung). Ein SFTP-Seitenpanel für Up-/Downloads ist für
+M6 geplant.
 
 **Stack:** Tauri v2 · Rust (russh 0.62, russh-sftp) · React + TypeScript · xterm.js
 
