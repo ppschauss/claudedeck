@@ -243,7 +243,15 @@ pub async fn connect(
     state: State<'_, AppState>,
     password: Option<String>,
 ) -> Result<(), ApiError> {
-    app.state::<ReconnectSupervisor>().wake_retry();
+    // Läuft bereits eine Recovery-Runde (manueller "Jetzt neu verbinden"-Button im Overlay),
+    // treibt der Supervisor die State-Machine selbst über reconnecting/failed/connected. Wir
+    // wecken ihn nur aus dem Backoff-Sleep und emittieren KEINE eigenen connecting/failed-Events
+    // — sonst blitzt bei einem fehlschlagenden Klick kurz das (sachlich falsche) "gestoppt"-Modal.
+    let supervisor = app.state::<ReconnectSupervisor>();
+    if supervisor.is_recovering() {
+        supervisor.wake_retry();
+        return Ok(());
+    }
     do_connect_core(&app, &state, password, HostkeyPolicy::Strict, false).await
 }
 

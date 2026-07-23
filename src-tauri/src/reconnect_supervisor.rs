@@ -121,6 +121,14 @@ impl ReconnectSupervisor {
         }
     }
 
+    /// Läuft gerade eine Recovery-Runde? Genutzt von `connect()`, um bei aktivem Supervisor den
+    /// eigenen `do_connect_core` zu überspringen (nur `wake_retry`) — sonst würde der interaktive
+    /// Pfad `connecting`/`failed`-Events emittieren und das Reconnect-Overlay flackern lassen bzw.
+    /// kurzzeitig ein sachlich falsches "Neuverbinden gestoppt"-Modal zeigen.
+    pub fn is_recovering(&self) -> bool {
+        self.in_recovery.load(Ordering::SeqCst)
+    }
+
     /// Bricht eine laufende Recovery-Runde ab (aufgerufen von `disconnect()`). Sicher, auch
     /// wenn gerade keine Runde läuft.
     pub fn cancel(&self) {
