@@ -18,8 +18,18 @@ import {
   type Project,
 } from "../lib/ipc";
 import { describeApiError } from "../lib/apiError";
+import { findOpenByName } from "../lib/attachGuard";
+import { debounceTrailing } from "../lib/debounce";
 import * as termPool from "../lib/termPool";
 import { useSessionStore } from "../stores/sessionStore";
+
+// Fix 3 (Review-Fund M4-Task-5): der `fit()`-Aufruf in `TerminalHost`s `ResizeObserver` bleibt
+// unverändert sofort/ungedrosselt (reine Layout-Anpassung, kein IPC) — aber das dadurch
+// ausgelöste `onResize` von xterm (hier verdrahtet) triggert bei jedem Fenster-Resize-Frame
+// erneut `resize_session`. Bei einem Drag-Resize wären das viele IPC-Calls pro Sekunde; 100ms
+// Trailing-Debounce genügt (keine spürbare Verzögerung, aber max. 1 Call pro 100ms-Fenster mit
+// den zuletzt gemessenen cols/rows).
+const RESIZE_DEBOUNCE_MS = 100;
 
 // Fallback-Größe fürs `open_session`/`start_project`-IPC, bevor überhaupt ein Terminal-DOM-
 // Element existiert, an dem `fit()` etwas messen könnte (siehe TerminalHost — sobald das
@@ -54,14 +64,15 @@ async function attachAndTrack(
 
   sessionId = result.sessionId;
   const id = sessionId;
+  const debouncedResize = debounceTrailing((cols: number, rows: number) => {
+    void resizeSession(id, cols, rows);
+  }, RESIZE_DEBOUNCE_MS);
   termPool.ensure(
     id,
     (bytes) => {
       void writeSession(id, bytes);
     },
-    (cols, rows) => {
-      void resizeSession(id, cols, rows);
-    },
+    debouncedResize,
   );
   for (const chunk of pending) {
     termPool.write(id, b64ToBytes(chunk.dataB64));
@@ -132,6 +143,16 @@ export function Sidebar() {
   }
 
   async function handleAttach(name: string) {
+    // Fix 4 (Doppel-Attach-Guard): `notAttached` filtert bereits offene Namen aus der Liste,
+    // aber zwischen Klick und Re-Render (oder bei einem parallel eintreffenden
+    // `sessions-changed`/Fokus-Refresh) kann derselbe Name erneut hier landen — dann statt
+    // eines zweiten `open_session`-Attaches nur auf die vorhandene Session umschalten.
+    const existingId = findOpenByName(useSessionStore.getState().openSessions, name);
+    if (existingId) {
+      useSessionStore.getState().activated(existingId);
+      return;
+    }
+
     setBusyKey(name);
     setError(null);
     try {
@@ -180,8 +201,11 @@ export function Sidebar() {
                 className={sessionId === activeSessionId ? "session-item active" : "session-item"}
                 onClick={() => handleActivate(sessionId)}
               >
-                <span className="dot dot-filled" aria-hidden="true">
-                  ●
+                <span
+                  className={s.lost ? "dot dot-lost" : "dot dot-filled"}
+                  aria-hidden="true"
+                >
+                  {s.lost ? "⚠" : "●"}
                 </span>
                 <span className="session-name">{s.name}</span>
                 {s.activity.badge > 0 && <span className="badge">{s.activity.badge}</span>}

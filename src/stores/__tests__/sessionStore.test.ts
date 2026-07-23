@@ -43,6 +43,7 @@ describe("opened", () => {
     expect(entry?.name).toBe("cc-otakupulse");
     expect(entry?.activity).toEqual({ badge: 0, lastOutputAt: null, notified: false });
     expect(entry?.notifyEnabled).toBe(true);
+    expect(entry?.lost).toBe(false);
   });
 
   it("mehrere geöffnete Sessions bleiben nebeneinander bestehen (kein Disposen)", () => {
@@ -112,6 +113,39 @@ describe("closed", () => {
     useSessionStore.getState().closed("s1");
     expect(useSessionStore.getState().activeSessionId).toBe("s2");
     expect(useSessionStore.getState().openSessions.has("s2")).toBe(true);
+  });
+});
+
+describe("markLost", () => {
+  it("setzt lost auf true für die betroffene Session, lässt sie aber in openSessions", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().markLost("s1");
+    const state = useSessionStore.getState();
+    expect(state.openSessions.get("s1")?.lost).toBe(true);
+    expect(state.openSessions.has("s1")).toBe(true);
+  });
+
+  it("ist ein No-Op für eine unbekannte sessionId", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    expect(() => useSessionStore.getState().markLost("unbekannt")).not.toThrow();
+    expect(useSessionStore.getState().openSessions.get("s1")?.lost).toBe(false);
+  });
+
+  it("activated funktioniert weiterhin für eine lost-Session (Re-Attach macht sie wieder aktiv)", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().opened("s2", "cc-b"); // s2 aktiv, s1 im Hintergrund
+    useSessionStore.getState().markLost("s1");
+    useSessionStore.getState().activated("s1");
+    const state = useSessionStore.getState();
+    expect(state.activeSessionId).toBe("s1");
+    expect(state.openSessions.get("s1")?.lost).toBe(true);
+  });
+
+  it("closed entfernt auch eine lost-Session vollständig", () => {
+    useSessionStore.getState().opened("s1", "cc-a");
+    useSessionStore.getState().markLost("s1");
+    useSessionStore.getState().closed("s1");
+    expect(useSessionStore.getState().openSessions.has("s1")).toBe(false);
   });
 });
 

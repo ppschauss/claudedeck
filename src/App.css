@@ -94,6 +94,10 @@
   color: var(--accent);
 }
 
+.session-item .dot-lost {
+  color: var(--warn);
+}
+
 .session-name {
   flex: 1 1 auto;
   overflow: hidden;
@@ -148,6 +152,21 @@
   font-size: 14px;
   padding: 24px;
   text-align: center;
+}
+
+.connection-lost-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--text-h);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .exit-notices {

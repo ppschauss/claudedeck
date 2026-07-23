@@ -8,27 +8,39 @@
  * 2. Host-Größenänderung → aktives Terminal per `fit()` neu einpassen (ändert sich dadurch die
  *    Größe wirklich, meldet xterms eigenes `onResize`, in `termPool.ensure()` verdrahtet, sie
  *    von selbst per `resize_session` ans Backend).
- * 3. `pty-exit`: Session ist wirklich beendet (nicht nur detached — das Backend unterdrückt das
- *    Event bei einem selbst ausgelösten Detach) → TermPool-Eintrag endgültig entsorgen,
- *    Store-Eintrag entfernen, ggf. zur nächsten offenen Session wechseln (Review-Fund
- *    M4-Task-4: `sessionStore.closed()` wechselt selbst nicht um) und einen Hinweis anzeigen.
+ * 3. `pty-exit`: zwei grundverschiedene reasons (Review-Fund M4-Task-5, Fix 1+2):
+ *    - "exited": Session ist wirklich beendet → TermPool-Eintrag endgültig entsorgen,
+ *      Store-Eintrag entfernen, ggf. zur nächsten offenen Session wechseln (Review-Fund
+ *      M4-Task-4: `sessionStore.closed()` wechselt selbst nicht um) — ABER NUR, wenn die
+ *      beendete Session auch die gerade aktive war (Fix 1: eine Hintergrund-Session, die
+ *      endet, darf den Nutzer nicht aus der aktiven Session reißen).
+ *    - "connectionLost": Task 6 re-attacht später mit derselben sessionId ins selbe Terminal
+ *      → KEIN dispose, KEIN Entfernen aus dem Store, nur `markLost()` + Banner-Overlay, falls
+ *      die betroffene Session gerade aktiv ist.
+ *    In beiden Fällen zusätzlich ein dismissbarer Hinweis oben im Terminalbereich (nur für
+ *    "exited" — der connectionLost-Fall hat sein eigenes, dauerhaftes Overlay statt eines
+ *    wegklickbaren Einzeil-Hinweises).
  */
 import { useEffect, useRef, useState } from "react";
-import { onPtyExit, type PtyExitEvent } from "../lib/ipc";
+import { onPtyExit } from "../lib/ipc";
 import { nextActiveSessionId } from "../lib/sessionSwitch";
 import * as termPool from "../lib/termPool";
 import { useSessionStore } from "../stores/sessionStore";
 
+// Nur noch für reason "exited" — "connectionLost" bekommt das dauerhafte Banner-Overlay unten
+// statt eines wegklickbaren Einzeil-Hinweises (Fix 2).
 interface ExitNotice {
   id: string;
   name: string;
-  reason: PtyExitEvent["reason"];
 }
 
 export function TerminalHost() {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const hasOpenSessions = useSessionStore((s) => s.openSessions.size > 0);
+  const activeIsLost = useSessionStore(
+    (s) => (s.activeSessionId ? (s.openSessions.get(s.activeSessionId)?.lost ?? false) : false),
+  );
   const prevActiveRef = useRef<string | null>(null);
   const [notices, setNotices] = useState<ExitNotice[]>([]);
 
@@ -60,14 +72,27 @@ export function TerminalHost() {
     void onPtyExit(({ sessionId, reason }) => {
       const state = useSessionStore.getState();
       const name = state.openSessions.get(sessionId)?.name ?? sessionId;
+
+      if (reason === "connectionLost") {
+        // Fix 2: Terminal bleibt im TermPool, Session bleibt im Store — Task 6 re-attacht mit
+        // derselben sessionId ins selbe Terminal. Kein Notice hier, das dauerhafte
+        // Banner-Overlay unten übernimmt den Hinweis, solange die Session aktiv/lost ist.
+        state.markLost(sessionId);
+        return;
+      }
+
+      // reason === "exited": Session ist wirklich beendet.
+      const wasActive = state.activeSessionId === sessionId;
       const orderedIds = Array.from(state.openSessions.keys());
       const next = nextActiveSessionId(orderedIds, sessionId);
 
       termPool.dispose(sessionId);
       state.closed(sessionId);
-      if (next) useSessionStore.getState().activated(next);
+      // Fix 1: nur umschalten, wenn die beendete Session auch die aktive war — sonst reißt das
+      // Enden einer Hintergrund-Session den Nutzer aus der gerade aktiven Session.
+      if (wasActive && next) useSessionStore.getState().activated(next);
 
-      setNotices((prev) => [...prev, { id: `${sessionId}-${Date.now()}`, name, reason }]);
+      setNotices((prev) => [...prev, { id: `${sessionId}-${Date.now()}`, name }]);
     }).then((fn) => {
       // Siehe App.tsx: Cleanup kann (StrictMode-Doppel-Mount) schon vor der `listen()`-Antwort
       // gelaufen sein — dann sofort wieder abmelden statt einen zweiten Listener leaken zu
@@ -94,10 +119,7 @@ export function TerminalHost() {
         <div className="exit-notices">
           {notices.map((n) => (
             <div key={n.id} className="exit-notice">
-              <span>
-                „{n.name}“{" "}
-                {n.reason === "exited" ? "wurde beendet." : "hat die Verbindung verloren."}
-              </span>
+              <span>„{n.name}“ wurde beendet.</span>
               <button type="button" onClick={() => dismissNotice(n.id)} aria-label="Hinweis schließen">
                 ×
               </button>
@@ -110,6 +132,9 @@ export function TerminalHost() {
           <div className="terminal-empty-hint">
             Keine Session offen — links eine laufende oder startbare Session wählen.
           </div>
+        )}
+        {activeIsLost && (
+          <div className="connection-lost-banner">Verbindung verloren – Reconnect folgt</div>
         )}
       </div>
     </div>

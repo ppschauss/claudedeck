@@ -13,6 +13,11 @@ export interface OpenSession {
   name: string;
   activity: Activity;
   notifyEnabled: boolean;
+  /** true = pty-exit kam mit reason "connectionLost" (Review-Fund M4-Task-5, Fix 2): Terminal
+   * bleibt im TermPool erhalten, Session bleibt in `openSessions` — Task 6 re-attacht mit
+   * derselben sessionId ins selbe Terminal, statt (wie bei "exited") disposed/entfernt zu
+   * werden. */
+  lost: boolean;
 }
 
 export interface SessionState {
@@ -36,6 +41,11 @@ export interface SessionState {
   /** Ein Output-Chunk ist für `sessionId` eingetroffen; `now` i.d.R. `Date.now()`. Badge zählt
    * nur hoch, wenn die Session gerade nicht aktiv ist. No-Op für unbekannte sessionId. */
   outputReceived: (sessionId: string, now: number) => void;
+  /** pty-exit mit reason "connectionLost" (Fix 2): markiert die Session als `lost`, OHNE sie
+   * aus `openSessions` zu entfernen — Terminal/Store-Eintrag bleiben für den Re-Attach (Task 6)
+   * intakt. `activated()` funktioniert unverändert auch auf einer lost-Session. No-Op für
+   * unbekannte sessionId. */
+  markLost: (sessionId: string) => void;
   /** Session aus `openSessions` entfernen (Detach/Exit). War sie aktiv, wird `activeSessionId`
    * auf `null` gesetzt — welche Session danach angezeigt wird, entscheidet die UI (Task 5). */
   closed: (sessionId: string) => void;
@@ -57,7 +67,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   opened: (sessionId, name) =>
     set((state) => {
       const openSessions = new Map(state.openSessions);
-      openSessions.set(sessionId, { name, activity: freshActivity(), notifyEnabled: true });
+      openSessions.set(sessionId, { name, activity: freshActivity(), notifyEnabled: true, lost: false });
       return { openSessions, activeSessionId: sessionId };
     }),
 
@@ -77,6 +87,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       const isActive = state.activeSessionId === sessionId;
       const openSessions = new Map(state.openSessions);
       openSessions.set(sessionId, { ...entry, activity: onOutput(entry.activity, now, isActive) });
+      return { openSessions };
+    }),
+
+  markLost: (sessionId) =>
+    set((state) => {
+      const entry = state.openSessions.get(sessionId);
+      if (!entry) return {};
+      const openSessions = new Map(state.openSessions);
+      openSessions.set(sessionId, { ...entry, lost: true });
       return { openSessions };
     }),
 
