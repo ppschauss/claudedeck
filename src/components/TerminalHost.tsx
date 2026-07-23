@@ -26,6 +26,7 @@ import { onPtyExit } from "../lib/ipc";
 import { nextActiveSessionId } from "../lib/sessionSwitch";
 import * as termPool from "../lib/termPool";
 import { useSessionStore } from "../stores/sessionStore";
+import { SearchBar } from "./SearchBar";
 
 // Nur noch für reason "exited" — "connectionLost" bekommt das dauerhafte Banner-Overlay unten
 // statt eines wegklickbaren Einzeil-Hinweises (Fix 2).
@@ -43,6 +44,7 @@ export function TerminalHost() {
   );
   const prevActiveRef = useRef<string | null>(null);
   const [notices, setNotices] = useState<ExitNotice[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     const prev = prevActiveRef.current;
@@ -53,7 +55,24 @@ export function TerminalHost() {
       termPool.show(activeSessionId, hostRef.current);
     }
     prevActiveRef.current = activeSessionId;
+    // Beim Sessionwechsel die Suche schließen — ein offenes Suchfeld für "die andere Session"
+    // wäre irreführend (Treffer würden für ein anderes Terminal gesucht als sichtbar ist).
+    setSearchOpen(false);
   }, [activeSessionId]);
+
+  // Strg+F öffnet die Scrollback-Suche für die aktive Session (Task 6). `preventDefault`
+  // verhindert die Browser-eigene Seitensuche im WebView.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        if (!useSessionStore.getState().activeSessionId) return;
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -126,6 +145,9 @@ export function TerminalHost() {
             </div>
           ))}
         </div>
+      )}
+      {searchOpen && activeSessionId && (
+        <SearchBar sessionId={activeSessionId} onClose={() => setSearchOpen(false)} />
       )}
       <div className="terminal-host" ref={hostRef}>
         {!hasOpenSessions && (

@@ -101,6 +101,13 @@ export function fit(sessionId: string): { cols: number; rows: number } | null {
   return { cols: entry.term.cols, rows: entry.term.rows };
 }
 
+/** Liefert das `SearchAddon` von `sessionId` (Task 6, Strg+F) — `null`, falls `ensure()` für
+ * diese `sessionId` nie aufgerufen wurde. Kein eigener Zustand hier: `SearchBar.tsx` ruft
+ * `findNext`/`findPrevious` direkt auf dem zurückgegebenen Addon auf. */
+export function search(sessionId: string): SearchAddon | null {
+  return pool.get(sessionId)?.search ?? null;
+}
+
 /** Schreibt rohe PTY-Bytes direkt ins Terminal — `Terminal.write` akzeptiert `Uint8Array` und
  * puffert intern korrekt über an Chunk-Grenzen aufgetrennte UTF-8-Multibyte-Sequenzen hinweg. */
 export function write(sessionId: string, bytes: Uint8Array): void {
