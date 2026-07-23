@@ -3,13 +3,17 @@
  * Seiteneffekt-Controller: fragt die OS-Berechtigung einmalig an, reconciled bei jeder
  * `sessionStore`-Änderung über die reine `decideSchedule`-Entscheidung (`notifyScheduler.ts`),
  * welche Timer neu gesetzt/gecancelt werden müssen, und prüft beim Timer-Feuern erneut per
- * `shouldNotify` (`badges.ts`), ob tatsächlich noch benachrichtigt werden soll (Session könnte
- * inzwischen aktiv geworden sein, ohne dass der Timer schon reagiert hat).
+ * `decideFire` (`notifyScheduler.ts`), ob tatsächlich noch benachrichtigt werden soll (Session
+ * könnte inzwischen aktiv geworden sein, ohne dass der Timer schon reagiert hat) — lehnt
+ * `decideFire` ab, weil seit dem Planen des Timers neuer Output kam (Schwellenwert also von
+ * `lastOutputAt` aus noch nicht erreicht), plant es den Timer relativ zu `lastOutputAt` NEU statt
+ * ihn ersatzlos verschwinden zu lassen (Fix I-1, Review-Fund Task 7 — sonst geht die
+ * Notification verloren, wenn der letzte Chunk eines Output-Bursts <2s vor dem ursprünglich
+ * geplanten Feuern eintraf).
  */
 import { useEffect, useRef } from "react";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { shouldNotify } from "../lib/badges";
-import { decideSchedule } from "../lib/notifyScheduler";
+import { decideFire, decideSchedule } from "../lib/notifyScheduler";
 import { useSessionStore } from "../stores/sessionStore";
 
 /** Gleicher Schwellenwert wie `badges.shouldNotify`s Default — explizit statt implizit, damit
@@ -40,12 +44,24 @@ export function NotificationManager() {
 
     function fire(sessionId: string) {
       timers.delete(sessionId);
-      const entry = useSessionStore.getState().openSessions.get(sessionId);
-      if (!entry || !permittedRef.current) return;
-      if (!shouldNotify(entry.activity, Date.now(), entry.notifyEnabled, entry.lost, THRESHOLD_MS))
-        return;
-      useSessionStore.getState().notifiedSent(sessionId);
-      void sendNotification({ title: entry.name, body: "wartet auf Eingabe" });
+      const state = useSessionStore.getState();
+      const entry = state.openSessions.get(sessionId);
+      const decision = decideFire(entry, state.activeSessionId, sessionId, Date.now(), THRESHOLD_MS);
+      switch (decision.action) {
+        case "notify":
+          if (!entry || !permittedRef.current) return;
+          state.notifiedSent(sessionId);
+          void sendNotification({ title: entry.name, body: "wartet auf Eingabe" });
+          return;
+        case "reschedule":
+          timers.set(
+            sessionId,
+            setTimeout(() => fire(sessionId), decision.delayMs),
+          );
+          return;
+        case "cancel":
+          return;
+      }
     }
 
     function reconcile() {

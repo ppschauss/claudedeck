@@ -12,10 +12,8 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-// NotConnected/TmuxMissing werden erst von Task 3s Session-Commands konstruiert — die Variante
-// existiert bereits jetzt, damit der IPC-Contract von Anfang an vollständig ist; ansonsten
-// meldet `-D warnings` "never constructed".
-#[allow(dead_code)]
+// Alle Varianten werden inzwischen produktiv konstruiert (siehe `commands/`,
+// `reconnect_supervisor.rs`) — kein `#[allow(dead_code)]` mehr nötig.
 pub enum ApiError {
     #[error("{message}")]
     AuthFailed { message: String },

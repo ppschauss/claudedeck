@@ -99,10 +99,8 @@ pub struct AppInner {
 impl AppInner {
     /// Vergibt eine neue, innerhalb dieser App-Instanz eindeutige Session-ID. Format ist
     /// bewusst opak (kein Bezug zu tmux-Namen) — Task 3 nutzt sie als Schlüssel für
-    /// `sessions` und als `Channel`-Zielschlüssel im Frontend. Bislang nur über den Unit-Test
-    /// unten aufgerufen; die Test-Erreichbarkeit zählt für `-D warnings` im Nicht-Test-Build
-    /// nicht als Nutzung, daher `#[allow(dead_code)]`.
-    #[allow(dead_code)]
+    /// `sessions` und als `Channel`-Zielschlüssel im Frontend. Produktiv genutzt in
+    /// `commands/sessions.rs` (Session öffnen/starten).
     pub fn alloc_session_id(&mut self) -> String {
         self.next_id += 1;
         format!("s{}", self.next_id)

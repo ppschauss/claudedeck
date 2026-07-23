@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideSchedule } from "../notifyScheduler";
+import { decideFire, decideSchedule } from "../notifyScheduler";
 import type { OpenSession } from "../../stores/sessionStore";
 
 function session(overrides: Partial<OpenSession> = {}): OpenSession {
@@ -95,5 +95,60 @@ describe("decideSchedule (pure)", () => {
     const decision = decideSchedule(openSessions, "active", new Set(["s2"]));
     expect(decision.toSchedule).toEqual(["s1"]);
     expect(decision.toCancel).toEqual([]);
+  });
+});
+
+describe("decideFire (pure, Fix I-1)", () => {
+  it("benachrichtigt, wenn der Schwellenwert seit lastOutputAt erreicht ist", () => {
+    const entry = session({ activity: { badge: 1, lastOutputAt: 1000, notified: false } });
+    const decision = decideFire(entry, "s2", "s1", 3000);
+    expect(decision).toEqual({ action: "notify" });
+  });
+
+  it("cancelt, wenn die Session inzwischen nicht mehr existiert (entry undefined)", () => {
+    const decision = decideFire(undefined, "s2", "s1", 3000);
+    expect(decision).toEqual({ action: "cancel" });
+  });
+
+  it("cancelt statt neu zu planen, wenn die Session beim Ablehnen inzwischen aktiv wurde", () => {
+    // Schwellenwert noch nicht erreicht (now - lastOutputAt = 500 < 2000) -> shouldNotify lehnt
+    // ab, decideFire prüft dann Eligibility neu: id === activeSessionId -> nicht eligible.
+    const entry = session({ activity: { badge: 0, lastOutputAt: 2500, notified: false } });
+    const decision = decideFire(entry, "s1", "s1", 3000);
+    expect(decision).toEqual({ action: "cancel" });
+  });
+
+  it("cancelt, wenn bereits benachrichtigt wurde", () => {
+    const entry = session({ activity: { badge: 1, lastOutputAt: 500, notified: true } });
+    const decision = decideFire(entry, "s2", "s1", 3000);
+    expect(decision).toEqual({ action: "cancel" });
+  });
+
+  it(
+    "plant NEU relativ zu lastOutputAt statt die Notification zu verlieren, wenn seit dem " +
+      "Planen des Timers neuer Output kam (Fix I-1, Review-Fund Task 7)",
+    () => {
+      const entry = session({ activity: { badge: 2, lastOutputAt: 1500, notified: false } });
+      // Timer wurde bei t=0 für t=2000 geplant, feuert jetzt bei t=2000 — seit t=1500 kam aber
+      // neuer Output rein, der Schwellenwert (1500 + 2000 = 3500) ist noch nicht erreicht.
+      const decision = decideFire(entry, "s2", "s1", 2000);
+      expect(decision).toEqual({ action: "reschedule", delayMs: 1500 });
+    },
+  );
+
+  it("feuert beim neu geplanten Timer dann tatsächlich (Fix I-1: t=3500, nicht bei t=2000 verworfen)", () => {
+    const entry = session({ activity: { badge: 2, lastOutputAt: 1500, notified: false } });
+    // Der bei t=2000 neu geplante Timer (delayMs=1500) feuert bei t=3500.
+    const decision = decideFire(entry, "s2", "s1", 3500);
+    expect(decision).toEqual({ action: "notify" });
+  });
+
+  it("cancelt statt neu zu planen, wenn die Session beim Ablehnen nicht mehr eligible ist (z.B. notifyEnabled aus)", () => {
+    const entry = session({
+      notifyEnabled: false,
+      activity: { badge: 2, lastOutputAt: 1500, notified: false },
+    });
+    const decision = decideFire(entry, "s2", "s1", 2000);
+    expect(decision).toEqual({ action: "cancel" });
   });
 });
