@@ -174,7 +174,12 @@ fn emit_state(
 /// `.setup()`.
 pub fn spawn(app: AppHandle) {
     spawn_keepalive(app.clone());
-    tokio::spawn(async move {
+    // WICHTIG: `tauri::async_runtime::spawn`, NICHT `tokio::spawn`. Diese Funktion wird aus
+    // `lib.rs`s `.setup()` heraus aufgerufen — dort läuft KEIN Tokio-Runtime-Kontext, ein
+    // nacktes `tokio::spawn` würde sofort panicken ("there is no reactor running") und die
+    // App beim Start beenden. `async_runtime::spawn` spawnt auf Tauris globale Runtime und
+    // funktioniert kontextunabhängig.
+    tauri::async_runtime::spawn(async move {
         loop {
             app.state::<ReconnectSupervisor>()
                 .loss_notify
@@ -186,7 +191,9 @@ pub fn spawn(app: AppHandle) {
 }
 
 fn spawn_keepalive(app: AppHandle) {
-    tokio::spawn(async move {
+    // Siehe Kommentar in `spawn()`: aus dem `.setup()`-Kontext heraus zwingend
+    // `tauri::async_runtime::spawn`.
+    tauri::async_runtime::spawn(async move {
         let mut ticker = tokio::time::interval(KEEPALIVE_INTERVAL);
         ticker.tick().await; // erster Tick feuert sofort — überspringen, sonst Keepalive direkt beim Start
         loop {
