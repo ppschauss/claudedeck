@@ -7,6 +7,11 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    # Als Job-Env, nicht direkt als `secrets.*` in `if:` — nur so lässt sich zuverlässig
+    # abfragen, ob ein Zertifikat überhaupt hinterlegt ist.
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,7 +20,74 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
-      - run: npm run tauri build -- --bundles msi
+
+      # Ohne Secret bleibt dieser Schritt aus und der Build läuft unsigniert weiter —
+      # ein fehlendes Zertifikat darf den Build nicht kippen.
+      - name: Signierzertifikat einspielen
+        id: cert
+        if: env.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $pw = if ([string]::IsNullOrEmpty($env:WINDOWS_CERT_PASSWORD)) {
+            New-Object System.Security.SecureString
+          } else {
+            ConvertTo-SecureString -String $env:WINDOWS_CERT_PASSWORD -Force -AsPlainText
+          }
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          # Die .pfx sofort löschen: der Runner ist zwar flüchtig, aber sie hat nach dem
+          # Import in keinem Arbeitsverzeichnis mehr etwas zu suchen.
+          Remove-Item $pfx -Force
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+          Write-Host "Zertifikat eingespielt: $($cert.Subject)"
+
+      - name: Bauen
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+        run: |
+          if ($env:THUMBPRINT) {
+            # Als Datei und nicht als JSON-Zeichenkette übergeben: eine inline-JSON müsste
+            # durch PowerShell *und* npm.cmd hindurch, und deren Anführungszeichen-Regeln
+            # vertragen sich nicht.
+            $cfg = Join-Path $env:RUNNER_TEMP 'sign.conf.json'
+            @{ bundle = @{ windows = @{
+              certificateThumbprint = $env:THUMBPRINT
+              digestAlgorithm       = 'sha256'
+              # Ohne Zeitstempel wird die Signatur mit dem Zertifikat ungültig; damit
+              # bleibt sie es auch nach dessen Ablauf.
+              timestampUrl          = 'http://timestamp.digicert.com'
+            } } } | ConvertTo-Json -Depth 6 | Out-File -FilePath $cfg -Encoding utf8
+            npm run tauri build -- --bundles msi --config $cfg
+          } else {
+            Write-Host 'Kein Zertifikat hinterlegt — unsignierter Build.'
+            npm run tauri build -- --bundles msi
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Prüft, was tatsächlich herauskam, statt es anzunehmen. Bei einem selbst
+      # ausgestellten Zertifikat meldet der Runner `UnknownError`, weil er der
+      # Ausstellerkette nicht vertraut — signiert ist die Datei trotzdem. Deshalb ist das
+      # Kriterium „hat einen Signierer", nicht „Status ist Valid".
+      - name: Signatur prüfen
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+        run: |
+          $files = @('target\release\claudedeck.exe') +
+                   (Get-ChildItem 'target\release\bundle\msi\*.msi' | ForEach-Object FullName)
+          $fehlend = @()
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f
+            $wer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '— nicht signiert —' }
+            Write-Host "$f : $($sig.Status) / $wer"
+            if ($env:THUMBPRINT -and -not $sig.SignerCertificate) { $fehlend += $f }
+          }
+          if ($fehlend) {
+            throw "Zertifikat war hinterlegt, aber diese Dateien sind unsigniert: $($fehlend -join ', ')"
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: claudedeck-windows

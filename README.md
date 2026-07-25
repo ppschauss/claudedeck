@@ -82,9 +82,38 @@ Danach zeigt Windows „Patrick Schauss" als Herausgeber statt „Unbekannt", un
 erscheint keine Warnung mehr. Auf fremden Rechnern bleibt sie — dort ist das Zertifikat nicht
 hinterlegt, und das ist genau der Zweck der Übung.
 
-Damit **GitHub Actions** signiert, muss das Zertifikat als `.pfx` exportiert und base64-kodiert
-in ein Repository-Secret gelegt werden; der Workflow importiert es dann vor dem Build. Solange
-kein solches Secret existiert, baut der Workflow unverändert unsigniert weiter.
+### Automatisch signiert bauen
+
+`build.yml` signiert bereits selbst, sobald zwei Repository-Secrets gesetzt sind. Fehlen sie,
+baut der Workflow unverändert unsigniert weiter — ein fehlendes Zertifikat kippt den Build nicht.
+
+Zertifikat aus Schritt 1 exportieren und als base64 ablegen:
+
+```powershell
+$pw = Read-Host -AsSecureString "Passwort für die .pfx"
+Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" `
+  -FilePath "$env:TEMP\claudedeck.pfx" -Password $pw
+
+# Base64 in die Zwischenablage — dieser Text kommt ins Secret
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:TEMP\claudedeck.pfx")) | Set-Clipboard
+Remove-Item "$env:TEMP\claudedeck.pfx"
+```
+
+Unter *Settings → Secrets and variables → Actions* anlegen:
+
+| Secret | Inhalt |
+| --- | --- |
+| `WINDOWS_CERT_BASE64` | der base64-Text aus der Zwischenablage |
+| `WINDOWS_CERT_PASSWORD` | das eben vergebene Passwort |
+
+Der nächste Build importiert das Zertifikat, reicht seinen Fingerabdruck über `--config` an
+`tauri build` weiter und prüft anschließend nach, dass `.exe` und `.msi` wirklich einen Signierer
+tragen. Der Prüfschritt meldet dabei `UnknownError` statt `Valid` — der Runner kennt das selbst
+ausgestellte Zertifikat nicht und misstraut der Kette. Signiert ist die Datei trotzdem; auf einem
+Rechner, der das Zertifikat importiert hat (Schritt 3), steht `Valid`.
+
+Die `.pfx` selbst gehört **nicht** ins Repository. Sie liegt nur im Secret, und der Workflow
+löscht sie nach dem Import wieder vom Runner.
 
 ## Autor
 
