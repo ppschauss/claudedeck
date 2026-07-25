@@ -147,6 +147,32 @@ impl SshConnection {
     ) -> Result<PtyHandle, russh::Error> {
         PtyHandle::open(&self.handle, cmd, cols, rows).await
     }
+
+    /// Listet ein entferntes Verzeichnis (Ordner zuerst, darin neueste zuerst).
+    ///
+    /// Öffnet die SFTP-Sitzung für den Vorgang und lässt sie danach fallen. Die Sitzung bleibt
+    /// bewusst **nicht** offen: die Ablage wird selten benutzt, und ein dauerhaft mitlaufender
+    /// Kanal müsste bei jedem Reconnect eigens wiederhergestellt werden.
+    ///
+    /// `SftpSession` taucht absichtlich in keiner öffentlichen Signatur auf — sonst müsste
+    /// `src-tauri` `russh-sftp` selbst einbinden, nur um einen Typ benennen zu können.
+    pub async fn sftp_list(
+        &self,
+        path: &str,
+    ) -> Result<Vec<crate::sftp::RemoteEntry>, crate::sftp::SftpError> {
+        let session = crate::sftp::open_session(&self.handle).await?;
+        crate::sftp::list_dir(&session, path).await
+    }
+
+    /// Liest eine Datei, aber höchstens `limit` Bytes (siehe [`crate::sftp::read_file`]).
+    pub async fn sftp_read(
+        &self,
+        path: &str,
+        limit: u64,
+    ) -> Result<Vec<u8>, crate::sftp::SftpError> {
+        let session = crate::sftp::open_session(&self.handle).await?;
+        crate::sftp::read_file(&session, path, limit).await
+    }
 }
 
 /// Übersetzt einen generischen `russh`-Fehler aus `client::connect` in die präzise Ursache,

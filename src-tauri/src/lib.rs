@@ -29,6 +29,9 @@ pub fn run() {
             commands::close_session,
             commands::kill_session,
             commands::list_commands,
+            commands::list_directory,
+            commands::preview_file,
+            commands::download_file,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

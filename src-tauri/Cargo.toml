@@ -29,3 +29,8 @@ claudedeck-core = { path = "../crates/claudedeck-core" }
 tokio = { version = "1", features = ["sync", "time", "rt"] }
 dirs = "6"
 data-encoding = "2"
+
+[dev-dependencies]
+# Für die Kollisions-Tests von `unique_path` (commands/files.rs) — echte Dateien im Temp-Ordner
+# statt eines nachgebauten Dateisystems.
+tempfile = "3"

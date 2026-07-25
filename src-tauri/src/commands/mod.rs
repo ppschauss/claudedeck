@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod connection;
+pub mod files;
 pub mod sessions;
 
 // Wildcard-Reexport statt benannter Liste: `#[tauri::command]` generiert pro Funktion ein
@@ -9,4 +10,5 @@ pub mod sessions;
 // `__cmd__*`-Items — `generate_handler!` fände sie dann nicht.
 pub use catalog::*;
 pub use connection::*;
+pub use files::*;
 pub use sessions::*;
