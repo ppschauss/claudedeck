@@ -52,7 +52,7 @@ jobs:
           npm run tauri build -- --no-bundle
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Portable .exe signieren
+      - name: Binärdatei signieren (für den Installer)
         if: steps.cert.outputs.thumbprint != ''
         shell: pwsh
         env:
@@ -63,7 +63,7 @@ jobs:
                  -Certificate $c -HashAlgorithm SHA256 `
                  -TimestampServer 'http://timestamp.digicert.com'
           Write-Host "claudedeck.exe : $($r.Status)"
-          if (-not $r.SignerCertificate) { throw 'Signieren der portablen .exe fehlgeschlagen.' }
+          if (-not $r.SignerCertificate) { throw 'Signieren der Binärdatei fehlgeschlagen.' }
 
       - name: Bündeln
         shell: pwsh
@@ -88,6 +88,22 @@ jobs:
             npm run tauri build -- --bundles msi
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Noch einmal, weil der Bündel-Durchgang die Binärdatei erneut aus target/release/deps/
+      # ablegt und die Signatur dabei verliert (gemessen im Lauf 30174448301: signiert vor dem
+      # Bündeln, NotSigned danach). cargo verfolgt Quellen, nicht den Inhalt der Ausgabedatei.
+      - name: Portable .exe signieren
+        if: steps.cert.outputs.thumbprint != ''
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+        run: |
+          $c = Get-Item "Cert:\CurrentUser\My\$env:THUMBPRINT"
+          $r = Set-AuthenticodeSignature -FilePath 'target\release\claudedeck.exe' `
+                 -Certificate $c -HashAlgorithm SHA256 `
+                 -TimestampServer 'http://timestamp.digicert.com'
+          Write-Host "claudedeck.exe : $($r.Status)"
+          if (-not $r.SignerCertificate) { throw 'Signieren der portablen .exe fehlgeschlagen.' }
 
       # Prüft, was tatsächlich herauskam, statt es anzunehmen. Bei einem selbst
       # ausgestellten Zertifikat meldet der Runner `UnknownError`, weil er der
