@@ -27,6 +27,7 @@ import {
 import { describeApiError } from "../lib/apiError";
 import { findOpenByName } from "../lib/attachGuard";
 import { debounceTrailing } from "../lib/debounce";
+import { matchesQuery, sortByKey, type SortKey } from "../lib/sessionFilter";
 import { nextActiveSessionId } from "../lib/sessionSwitch";
 import * as termPool from "../lib/termPool";
 import { useSessionStore } from "../stores/sessionStore";
@@ -98,6 +99,8 @@ export function Sidebar() {
   const startable = useSessionStore((s) => s.startable);
   const openSessions = useSessionStore((s) => s.openSessions);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const query = useSessionStore((s) => s.query);
+  const sortBy = useSessionStore((s) => s.sortBy);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
@@ -155,11 +158,46 @@ export function Sidebar() {
     return names;
   }, [openSessions]);
 
-  const attached = useMemo(() => Array.from(openSessions.entries()), [openSessions]);
-  const notAttached = useMemo(
-    () => running.filter((r) => !openNames.has(r.name)),
-    [running, openNames],
-  );
+  // Angehängte Sessions kennen ihre Startzeit nicht selbst (`OpenSession` speichert nur Name und
+  // Activity) — sie steht in der `running`-Liste, die auch die bereits angehängten enthält.
+  // Ohne diese Zuordnung wäre die Sortierung „Startzeit" für genau die Gruppe blind, die man am
+  // häufigsten sortiert.
+  const createdByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of running) map.set(s.name, s.created);
+    return map;
+  }, [running]);
+
+  const attached = useMemo(() => {
+    const entries = Array.from(openSessions.entries()).filter(([, s]) =>
+      matchesQuery(s.name, query),
+    );
+    return sortByKey(entries, sortBy, ([, s]) => ({
+      name: s.name,
+      createdAt: createdByName.get(s.name) ?? null,
+      lastOutputAt: s.activity.lastOutputAt,
+    }));
+  }, [openSessions, query, sortBy, createdByName]);
+
+  const notAttached = useMemo(() => {
+    const list = running.filter((r) => !openNames.has(r.name) && matchesQuery(r.name, query));
+    return sortByKey(list, sortBy, (r) => ({
+      name: r.name,
+      createdAt: r.created,
+      lastOutputAt: null,
+    }));
+  }, [running, openNames, query, sortBy]);
+
+  // Projekte aus den `scan_paths` haben keinerlei Zeitstempel — bei Zeitsortierungen landen sie
+  // laut `sortByKey` hinten und werden dort nach Namen geordnet.
+  const startableView = useMemo(() => {
+    const list = startable.filter((p) => matchesQuery(p.name, query));
+    return sortByKey(list, sortBy, (p) => ({
+      name: p.name,
+      createdAt: null,
+      lastOutputAt: null,
+    }));
+  }, [startable, query, sortBy]);
 
   function handleActivate(sessionId: string) {
     useSessionStore.getState().activated(sessionId);
@@ -250,6 +288,27 @@ export function Sidebar() {
     <aside className="sidebar">
       {error && <p className="error-text sidebar-error">{error}</p>}
 
+      <div className="sidebar-controls">
+        <input
+          type="search"
+          className="sidebar-search"
+          placeholder="Suchen…"
+          aria-label="Sessions durchsuchen"
+          value={query}
+          onChange={(e) => useSessionStore.getState().queryChanged(e.target.value)}
+        />
+        <select
+          className="sidebar-sort"
+          aria-label="Sortierung"
+          value={sortBy}
+          onChange={(e) => useSessionStore.getState().sortChanged(e.target.value as SortKey)}
+        >
+          <option value="name">Name</option>
+          <option value="lastActive">Zuletzt aktiv</option>
+          <option value="created">Startzeit</option>
+        </select>
+      </div>
+
       <SidebarGroup title="Angehängt">
         {attached.length === 0 && <p className="sidebar-empty">–</p>}
         <ul>
@@ -317,9 +376,9 @@ export function Sidebar() {
       </SidebarGroup>
 
       <SidebarGroup title="Startbar">
-        {startable.length === 0 && <p className="sidebar-empty">–</p>}
+        {startableView.length === 0 && <p className="sidebar-empty">–</p>}
         <ul>
-          {startable.map((p) => (
+          {startableView.map((p) => (
             <li key={p.path}>
               <button
                 type="button"

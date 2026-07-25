@@ -18,6 +18,8 @@ function reset() {
     startable: [],
     openSessions: new Map(),
     activeSessionId: null,
+    query: "",
+    sortBy: "name",
   });
 }
 
@@ -194,6 +196,39 @@ describe("notifiedSent", () => {
     useSessionStore.getState().notifiedSent("s1");
     useSessionStore.getState().outputReceived("s1", 5000);
     expect(useSessionStore.getState().openSessions.get("s1")?.activity.notified).toBe(false);
+  });
+});
+
+describe("queryChanged", () => {
+  it("startet mit leerer Query", () => {
+    expect(useSessionStore.getState().query).toBe("");
+  });
+
+  it("übernimmt die Query unverändert", () => {
+    useSessionStore.getState().queryChanged("  WP ");
+    expect(useSessionStore.getState().query).toBe("  WP ");
+  });
+
+  // Die Query darf die Datenlage nicht anfassen — sie ist reiner Anzeigefilter.
+  it("lässt running und startable unberührt", () => {
+    useSessionStore.getState().sessionsLoaded({ running: [running], startable: [startable] });
+    useSessionStore.getState().queryChanged("passt-auf-nichts");
+    const state = useSessionStore.getState();
+    expect(state.running).toHaveLength(1);
+    expect(state.startable).toHaveLength(1);
+  });
+});
+
+describe("sortChanged", () => {
+  it("sortiert per Vorgabe nach Namen", () => {
+    expect(useSessionStore.getState().sortBy).toBe("name");
+  });
+
+  it("übernimmt den gewählten Sortierschlüssel", () => {
+    useSessionStore.getState().sortChanged("lastActive");
+    expect(useSessionStore.getState().sortBy).toBe("lastActive");
+    useSessionStore.getState().sortChanged("created");
+    expect(useSessionStore.getState().sortBy).toBe("created");
   });
 });
 

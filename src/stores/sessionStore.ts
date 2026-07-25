@@ -8,6 +8,7 @@ import { create } from "zustand";
 import type { Activity } from "../lib/badges";
 import { onOutput } from "../lib/badges";
 import type { Project, SessionInfo } from "../lib/ipc";
+import type { SortKey } from "../lib/sessionFilter";
 
 export interface OpenSession {
   name: string;
@@ -30,6 +31,10 @@ export interface SessionState {
   openSessions: Map<string, OpenSession>;
   /** Welche `openSessions`-Session gerade sichtbar ist (`null` = keine). */
   activeSessionId: string | null;
+  /** Suchtext der Sidebar. Reiner Anzeigefilter — verändert `running`/`startable` nie. */
+  query: string;
+  /** Sortierung aller drei Sidebar-Gruppen. */
+  sortBy: SortKey;
 
   /** Übernimmt das Ergebnis von `list_sessions` unverändert. */
   sessionsLoaded: (list: { running: SessionInfo[]; startable: Project[] }) => void;
@@ -62,6 +67,10 @@ export interface SessionState {
    * Notification für denselben Zyklus, bis neuer Output (`onOutput` in `badges.ts`) `notified`
    * wieder zurücksetzt. No-Op für unbekannte sessionId. */
   notifiedSent: (sessionId: string) => void;
+  /** Suchtext der Sidebar setzen (unverändert übernommen; das Trimmen macht `matchesQuery`). */
+  queryChanged: (query: string) => void;
+  /** Sortierung der Sidebar umstellen. */
+  sortChanged: (sortBy: SortKey) => void;
 }
 
 const freshActivity = (): Activity => ({ badge: 0, lastOutputAt: null, notified: false });
@@ -71,6 +80,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   startable: [],
   openSessions: new Map(),
   activeSessionId: null,
+  query: "",
+  sortBy: "name",
 
   sessionsLoaded: (list) =>
     set({ running: list.running, startable: list.startable }),
@@ -145,4 +156,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       openSessions.set(sessionId, { ...entry, activity: { ...entry.activity, notified: true } });
       return { openSessions };
     }),
+
+  queryChanged: (query) => set({ query }),
+
+  sortChanged: (sortBy) => set({ sortBy }),
 }));
