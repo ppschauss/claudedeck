@@ -57,7 +57,8 @@ auf). Für den Eigengebrauch genügt ein selbst ausgestelltes Zertifikat, dem de
 vertraut:
 
 ```powershell
-# 1) Einmalig ein Code-Signing-Zertifikat erzeugen (PowerShell als Administrator)
+# 1) Einmalig ein Code-Signing-Zertifikat erzeugen. Alles unter Cert:\CurrentUser\,
+#    deshalb genügt eine normale PowerShell ohne Administratorrechte.
 $cert = New-SelfSignedCertificate `
   -Type CodeSigningCert `
   -Subject "CN=Patrick Schauss" `
