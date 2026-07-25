@@ -14,6 +14,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal, type IDisposable } from "@xterm/xterm";
+import { altGraphChar } from "./keyboard";
 
 interface TermEntry {
   term: Terminal;
@@ -58,6 +59,26 @@ export function ensure(
     term.onData((data) => onData(encoder.encode(data))),
     term.onResize(({ cols, rows }) => onResize(cols, rows)),
   ];
+
+  // AltGr-Zeichen (@ { } [ ] \ | ~ €) selbst senden — `keyboard.ts` begründet, warum xterms
+  // eigene Behandlung im WebView2 nicht verlässlich greift.
+  //
+  // Zwei Details, ohne die das Zeichen doppelt ankäme:
+  // 1. Der Handler wird auch für `keyup` aufgerufen (`_keyUp` in xterms `CoreBrowserTerminal`
+  //    ruft denselben `_customKeyEventHandler`) — ohne den `keydown`-Guard würde jedes Zeichen
+  //    zweimal gesendet.
+  // 2. `preventDefault()` ist zwingend: ohne es tippt der Browser das Zeichen zusätzlich in
+  //    xterms verstecktes `<textarea>`, von wo es ein zweites Mal als Eingabe herauskommt.
+  //
+  // `false` als Rückgabe heißt „xterm soll dieses Event nicht weiter verarbeiten".
+  term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== "keydown") return true;
+    const char = altGraphChar(ev);
+    if (char === null) return true;
+    ev.preventDefault();
+    onData(encoder.encode(char));
+    return false;
+  });
 
   const entry: TermEntry = { term, fit, search, el, disposables };
   pool.set(sessionId, entry);

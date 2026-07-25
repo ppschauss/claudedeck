@@ -62,9 +62,13 @@ export function TerminalHost() {
 
   // Strg+F öffnet die Scrollback-Suche für die aktive Session (Task 6). `preventDefault`
   // verhindert die Browser-eigene Seitensuche im WebView.
+  //
+  // `!e.altKey` ist kein Detail: auf deutschem Layout meldet Windows AltGr als Strg+Alt, und
+  // AltGr+F ist dort keiner Zeichenbelegung zugeordnet — `e.key` bleibt also "f". Ohne diese
+  // Ausnahme würde AltGr+F ungewollt die Suche öffnen.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "f") {
         if (!useSessionStore.getState().activeSessionId) return;
         e.preventDefault();
         setSearchOpen(true);
