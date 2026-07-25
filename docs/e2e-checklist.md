@@ -201,6 +201,65 @@ Windows-Build mit deutschem Tastaturlayout prüfen.
       mit `ps -ef | grep claude` (erwartet: `claude --model … --effort …`).
 - [ ] Eine `config.json` **ohne** die neuen Felder lädt weiterhin ohne Fehler.
 
+## M8 — Layout, Themes, Profile, Einstellungen
+
+Spec: `docs/superpowers/specs/2026-07-25-claudedeck-m8-design.md`. Layout, Kontraste und die
+Farbschemata wurden vorab per Headless-Rendering geprüft (Screenshots im Entwicklungsverlauf);
+die folgenden Punkte brauchen den echten Windows-Build.
+
+### Fenster und Layout
+
+- [ ] **Kein Fenster-Scrollbalken**, bei keiner Fenstergröße — weder horizontal noch vertikal.
+- [ ] Nur Sidebar, Befehls-Panel und der Terminalinhalt scrollen; das Fenster bleibt stehen.
+- [ ] Sehr lange Session-Namen werden mit „…" gekürzt, nicht abgeschnitten, und erzeugen keine
+      horizontale Scrollbar in der Sidebar.
+- [ ] Fenster sehr schmal und sehr breit ziehen — nichts überlappt.
+
+### Sidebar
+
+- [ ] Leere Gruppen sind **unsichtbar**; sind alle leer, erscheint ein erklärender Hinweis.
+- [ ] Das ⋮ erscheint bei Hover **und** wenn man mit Tab in die Zeile springt.
+- [ ] Sekundärtext (Gruppentitel, Beschreibungen) ist gut lesbar — die Farbe wurde von 4,26:1
+      auf 5,20:1 angehoben.
+- [ ] Jedes bedienbare Element zeigt beim Tabben einen sichtbaren Fokusring.
+
+### Session-Status
+
+- [ ] Eine arbeitende Session zeigt einen **pulsierenden** Punkt.
+- [ ] Nach ~2 s Ruhe wechselt sie auf einen **grünen Haken** („fertig, wartet auf Eingabe").
+- [ ] Eine Session mit verlorener Verbindung zeigt ⚠ und **keinen** Haken.
+- [ ] Bei aktivierter Systemeinstellung „Animationen reduzieren" pulsiert nichts, der Zustand
+      bleibt an der Farbe erkennbar.
+
+### Terminal-Themes
+
+- [ ] Jedes der sechs Schemata ändert die Terminalfarben **und** den App-Akzent (Sidebar-Auswahl,
+      Badges, Fokusringe).
+- [ ] Schriftart JetBrains Mono wird angezeigt, **ohne** dass die App ins Netz geht.
+- [ ] Schriftgröße ändern → tmux-Geometrie stimmt weiter: kein Umbruch an falscher Stelle, kein
+      abgeschnittener Text. Auch nach dem Wechsel zu einer **anderen, gerade unsichtbaren**
+      Session muss deren Darstellung stimmen.
+- [ ] `Strg +`, `Strg −`, `Strg 0` wirken sofort; die Größe überlebt einen Neustart.
+
+### Profile
+
+- [ ] Eine `config.json` aus M7 (ohne `profiles`) startet ohne Fehler; das alte Ziel erscheint als
+      Profil und das **gespeicherte Passwort funktioniert weiterhin** (die Migration behält die
+      ID `default`, unter der es im Anmeldedaten-Speicher liegt).
+- [ ] Zweites Profil anlegen, Host/Benutzer/Port setzen, verbinden.
+- [ ] Zwischen zwei Profilen wechseln — jedes merkt sich **sein eigenes** Passwort.
+- [ ] „Passwort vergessen" entfernt nur das des gewählten Profils.
+- [ ] Profil löschen entfernt auch dessen Passwort; das letzte Profil lässt sich nicht löschen.
+- [ ] Auto-Connect aus → der Startdialog erscheint, obwohl ein Passwort gespeichert ist.
+- [ ] Unbekannter Host-Key → weiterhin Fingerprint-Dialog; geänderter Host-Key → weiterhin nur
+      Warnung ohne Bestätigungsmöglichkeit.
+
+### Einstellungen
+
+- [ ] Zahnrad in der Statusleiste und `Strg+,` öffnen den Dialog, Esc schließt ihn.
+- [ ] Jede Änderung wirkt sofort und überlebt einen Neustart (kein „Übernehmen"-Knopf).
+- [ ] Projektordner bearbeiten ändert die Liste unter „Startbar".
+
 ## Bekannte Einschränkungen / noch nicht abgenommen
 
 - **Auth::Key-Pfad ungetestet.** `ConnectGate` unterscheidet aktuell nicht zwischen
