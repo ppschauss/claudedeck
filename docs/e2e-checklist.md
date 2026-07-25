@@ -260,6 +260,49 @@ die folgenden Punkte brauchen den echten Windows-Build.
 - [ ] Jede Änderung wirkt sofort und überlebt einen Neustart (kein „Übernehmen"-Knopf).
 - [ ] Projektordner bearbeiten ändert die Liste unter „Startbar".
 
+## M9 — Projektfilter, Sortierung, Ablage
+
+Spec: `docs/superpowers/specs/2026-07-25-claudedeck-m9-design.md`. Der Projektfilter und das
+Locale-Setup wurden gegen den echten Server ausgeführt; der Rest braucht den Windows-Build.
+
+### Startbar
+
+- [ ] Es erscheinen **nur echte Projekte**, keine Docker-Datenverzeichnisse (auf Isekai: 9 statt
+      88 Einträge).
+- [ ] Ein neu angelegter Ordner mit `.git` taucht nach dem nächsten Laden auf.
+- [ ] Merkmalsliste in den Einstellungen leeren → alle Ordner erscheinen wieder (Filter aus).
+- [ ] Sortierung „Zuletzt aktiv" ordnet die Projekte **sichtbar** um; das zuletzt bearbeitete
+      steht oben (vorher wirkungslos, weil Projekte keinen Zeitstempel hatten).
+
+### Umlaute — die M7-Zusage, diesmal wirklich
+
+Der bisherige Fix setzte `LC_ALL=C.UTF-8`; diese Locale existiert auf dem Server **nicht**, womit
+glibc still auf ASCII zurückfiel. Jetzt wird zur Laufzeit eine vorhandene UTF-8-Locale gewählt.
+
+- [ ] Umlaute in der Ausgabe korrekt, Claude Codes Rahmenzeichen als durchgehende Linien.
+- [ ] `ä ö ü ß` getippt kommen im Terminal an.
+- [ ] Keine `setlocale`-Warnungen in der Ausgabe.
+
+### Ablage
+
+- [ ] Reiter „Ablage" im rechten Panel öffnet den Ordner der aktiven Session.
+- [ ] Ordner lassen sich betreten, „↑" führt zurück; an der Wurzel ist „↑" deaktiviert.
+- [ ] Ein von Claude erzeugtes PNG steht **oben** (neueste zuerst) und zeigt beim Klick eine
+      Vorschau.
+- [ ] Eine Nicht-Bild-Datei anklicken lädt sie direkt herunter.
+- [ ] Download landet im Downloads-Ordner; der Pfad erscheint als Hinweis.
+- [ ] **Zweimal dieselbe Datei laden erzeugt „ (2)"** statt die erste zu überschreiben.
+- [ ] Eine Datei über 8 MB zeigt keine Vorschau, sondern eine Meldung — und stürzt nicht ab;
+      der Download funktioniert trotzdem.
+- [ ] Sessionwechsel in ein anderes Projekt wechselt den Ordner der Ablage.
+- [ ] Ohne offene Session erklärt die Ablage das, statt leer oder kaputt zu wirken.
+- [ ] Ein Ordner mit vielen Dateien scrollt **innerhalb** des Panels; das Fenster bleibt stehen.
+
+### Panel-Reiter
+
+- [ ] „Befehle" und „Ablage" lassen sich wechseln; `Strg+B` klappt weiterhin das ganze Panel zu.
+- [ ] Model und Arbeitsstärke stehen **nur noch** im Einstellungen-Dialog, nicht mehr im Panel.
+
 ## Bekannte Einschränkungen / noch nicht abgenommen
 
 - **Auth::Key-Pfad ungetestet.** `ConnectGate` unterscheidet aktuell nicht zwischen

@@ -115,6 +115,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-log",
  "tauri-plugin-notification",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
 ]

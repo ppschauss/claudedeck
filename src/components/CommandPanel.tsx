@@ -1,7 +1,7 @@
 /**
- * Rechtes, ausklappbares Panel: oben die Regler für Model und Arbeitsstärke, darunter ein
- * Akkordeon aller verfügbaren Befehle (Skills, Agents, Slash-Commands, Connectors) mit eigener
- * Suche.
+ * Inhalt des Reiters „Befehle" im rechten Panel: ein Akkordeon aller verfügbaren Skills, Agents,
+ * Slash-Commands und Connectors mit eigener Suche. Den Rahmen (`<aside>`, Reiter, Auf-/Zuklappen)
+ * stellt `RightPanel.tsx`.
  *
  * Zwei Entwurfsentscheidungen, die im Verhalten sichtbar sind:
  *
@@ -10,26 +10,20 @@
  * 2. **Der Katalog wird pro Projektpfad geladen** (`needsReload` in `catalogStore.ts`): beim
  *    Sessionwechsel ändern sich die projektlokalen Einträge, nicht aber die globalen.
  *
- * Die Model-/Effort-Regler wirken doppelt: sie fügen das passende Slash-Kommando in die aktive
- * Session ein *und* schreiben die Wahl als Vorgabe in die `config.json`, aus der
- * `start_project` neue Sessions startet.
+ * Model und Arbeitsstärke saßen bis M9 hier — sie stehen jetzt ausschließlich im
+ * Einstellungen-Dialog, damit es dafür nur einen Ort gibt.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { describeApiError } from "../lib/apiError";
 import { filterCatalog, groupByKind } from "../lib/catalogFilter";
-import { EFFORT_LEVELS, effortFromIndex, indexOfEffort } from "../lib/effort";
 import {
-  getConfig,
   listCommands,
-  setConfig,
   writeSession,
   type CommandEntry,
   type CommandKind,
-  type Config,
 } from "../lib/ipc";
 import { needsReload, useCatalogStore } from "../stores/catalogStore";
 import { useSessionStore } from "../stores/sessionStore";
-import { useToastStore } from "../stores/toastStore";
 
 const KIND_TITLES: Record<CommandKind, string> = {
   skill: "Skills",
@@ -54,7 +48,6 @@ export function CommandPanel() {
   const running = useSessionStore((s) => s.running);
   const openSessions = useSessionStore((s) => s.openSessions);
 
-  const [config, setLocalConfig] = useState<Config | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Das Arbeitsverzeichnis der aktiven Session steht in der `running`-Liste (`SessionInfo.cwd`) —
@@ -80,13 +73,6 @@ export function CommandPanel() {
     if (!open) return;
     if (needsReload(useCatalogStore.getState(), projectDir)) void refresh(projectDir);
   }, [open, projectDir, refresh]);
-
-  useEffect(() => {
-    if (!open || config) return;
-    void getConfig()
-      .then(setLocalConfig)
-      .catch(() => setLocalConfig(null));
-  }, [open, config]);
 
   const grouped = useMemo(
     () => groupByKind(filterCatalog(entries, query)),
@@ -115,69 +101,11 @@ export function CommandPanel() {
     void writeSession(activeSessionId, new TextEncoder().encode(text));
   }
 
-  /** Persistiert eine Regler-Änderung und spiegelt sie in die laufende Session. */
-  async function applyDefault(patch: Partial<Config["defaults"]>, slashCommand: string) {
-    insert(slashCommand);
-    if (!config) return;
-    const next: Config = { ...config, defaults: { ...config.defaults, ...patch } };
-    setLocalConfig(next);
-    try {
-      await setConfig(next);
-    } catch (err) {
-      useToastStore.getState().push(describeApiError(err));
-    }
-  }
-
   if (!open) return null;
 
-  const effortIndex = indexOfEffort(config?.defaults.effort);
-  const models = config?.available_models ?? [];
-
   return (
-    <aside className="command-panel">
+    <>
       <div className="command-panel-head">
-        <div className="command-controls">
-          <label className="command-control">
-            <span>Model</span>
-            <select
-              value={config?.defaults.model ?? ""}
-              disabled={!config}
-              onChange={(e) =>
-                void applyDefault(
-                  { model: e.target.value || null },
-                  e.target.value ? `/model ${e.target.value} ` : "/model ",
-                )
-              }
-            >
-              <option value="">(Vorgabe)</option>
-              {models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="command-control">
-            <span>
-              Stärke: <strong>{EFFORT_LEVELS[effortIndex]}</strong>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={EFFORT_LEVELS.length - 1}
-              step={1}
-              value={effortIndex}
-              disabled={!config}
-              aria-label="Arbeitsstärke"
-              onChange={(e) => {
-                const level = effortFromIndex(Number(e.target.value));
-                void applyDefault({ effort: level }, `/effort ${level} `);
-              }}
-            />
-          </label>
-        </div>
-
         <div className="command-panel-search">
           <input
             type="search"
@@ -255,7 +183,7 @@ export function CommandPanel() {
           </li>
         ))}
       </Accordion>
-    </aside>
+    </>
   );
 }
 

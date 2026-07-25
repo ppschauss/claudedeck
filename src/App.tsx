@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import { CommandPanel } from "./components/CommandPanel";
 import { ConnectGate } from "./components/ConnectGate";
+import { RightPanel } from "./components/RightPanel";
 import { NotificationManager } from "./components/NotificationManager";
 import { ReconnectOverlay } from "./components/ReconnectOverlay";
 import { Sidebar } from "./components/Sidebar";
@@ -147,7 +147,7 @@ function App() {
         <Sidebar />
         <TerminalHost />
         <CommandPanelToggle />
-        <CommandPanel />
+        <RightPanel />
       </div>
       <StatusBar host={host} onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
