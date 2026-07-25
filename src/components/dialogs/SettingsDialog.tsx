@@ -15,7 +15,9 @@ import { useEffect, useState } from "react";
 import { describeApiError } from "../../lib/apiError";
 import { deleteSecret, setConfig, type Config, type NamedProfile } from "../../lib/ipc";
 import { EFFORT_LEVELS, effortFromIndex, indexOfEffort } from "../../lib/effort";
+import { diagnose, type TerminalDiagnostics } from "../../lib/termPool";
 import { FONT_CHOICES, TERMINAL_THEMES, clampFontSize } from "../../lib/terminalTheme";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useConfigStore } from "../../stores/configStore";
 import { useToastStore } from "../../stores/toastStore";
 
@@ -365,6 +367,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               Cursor blinkt
             </label>
 
+            <Diagnose />
+
             <Field label="Scrollback (Zeilen)">
               <input
                 type="number"
@@ -481,6 +485,60 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Messwerte zum Auswahl-Versatz. Steht hier, weil sich der Fehler außerhalb von Windows nicht
+ * nachstellen ließ — die Zahlen müssen aus dem echten WebView2 kommen.
+ *
+ * Zu lesen: stimmen „angenommen" und „echt" überein und ist die Drift 0, liegt es nicht am
+ * Zeilenraster. Ist „Versatz oben" größer als 0, schiebt etwas die Zeilen nach unten. Wächst die
+ * Drift, weicht der tatsächliche Zeilenabstand von der Annahme ab.
+ */
+function Diagnose() {
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const [werte, setWerte] = useState<TerminalDiagnostics | null>(null);
+
+  useEffect(() => {
+    if (activeSessionId) setWerte(diagnose(activeSessionId));
+  }, [activeSessionId]);
+
+  if (!activeSessionId) {
+    return <p className="settings-hint">Messwerte: keine Session aktiv.</p>;
+  }
+
+  return (
+    <div className="settings-field">
+      <span>Messwerte (Auswahl-Versatz)</span>
+      <textarea
+        readOnly
+        rows={3}
+        value={
+          werte
+            ? [
+                `dpr=${werte.devicePixelRatio}`,
+                `angenommen=${werte.angenommeneZeilenhoehe}`,
+                `echt=${werte.echterZeilenabstand}`,
+                `drift10=${werte.driftNachZehnZeilen}`,
+                `versatzOben=${werte.versatzObenPx}`,
+                werte.schriftart,
+              ].join("  ")
+            : "noch keine Messung möglich"
+        }
+      />
+      <button
+        type="button"
+        className="profile-add"
+        onClick={() => setWerte(diagnose(activeSessionId))}
+      >
+        Neu messen
+      </button>
+      <span className="settings-hint">
+        Bitte diese Zeile weitergeben, wenn die Mausauswahl daneben greift — daraus lässt sich
+        die Ursache eindeutig ablesen.
+      </span>
     </div>
   );
 }

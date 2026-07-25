@@ -44,3 +44,51 @@ npx vitest run                   # Frontend-Tests
 
 Windows-Builds entstehen ausschließlich in GitHub Actions (`build.yml`, windows-latest):
 `.msi`-Installer + portable `claudedeck.exe` als Artifact `claudedeck-windows`.
+
+## Installations-Warnung von Windows
+
+Beim Ausführen meldet Windows „Der Herausgeber konnte nicht verifiziert werden" bzw.
+SmartScreen blockt. **Das liegt nicht an fehlenden Angaben in der Datei, sondern daran, dass
+sie nicht signiert ist** — die Metadaten unten ändern daran nichts.
+
+Vollständig verschwindet die Warnung nur mit einem gekauften Code-Signing-Zertifikat, und selbst
+dann sofort nur bei einem EV-Zertifikat (bei OV baut SmartScreen erst über Downloads Reputation
+auf). Für den Eigengebrauch genügt ein selbst ausgestelltes Zertifikat, dem der eigene Rechner
+vertraut:
+
+```powershell
+# 1) Einmalig ein Code-Signing-Zertifikat erzeugen (PowerShell als Administrator)
+$cert = New-SelfSignedCertificate `
+  -Type CodeSigningCert `
+  -Subject "CN=Patrick Schauss" `
+  -CertStoreLocation Cert:\CurrentUser\My `
+  -NotAfter (Get-Date).AddYears(5)
+
+# 2) Fingerabdruck notieren — er kommt in tauri.conf.json bzw. in ein GitHub-Secret
+$cert.Thumbprint
+
+# 3) Dem Zertifikat auf diesem Rechner vertrauen
+Export-Certificate -Cert $cert -FilePath "$env:TEMP\claudedeck.cer"
+Import-Certificate -FilePath "$env:TEMP\claudedeck.cer" -CertStoreLocation Cert:\CurrentUser\Root
+Import-Certificate -FilePath "$env:TEMP\claudedeck.cer" -CertStoreLocation Cert:\CurrentUser\TrustedPublisher
+
+# 4) Eine vorhandene Datei damit signieren (oder den Fingerabdruck in
+#    tauri.conf.json unter bundle.windows.certificateThumbprint eintragen)
+Set-AuthenticodeSignature -FilePath .\claudedeck.exe -Certificate $cert `
+  -TimestampServer "http://timestamp.digicert.com"
+```
+
+Danach zeigt Windows „Patrick Schauss" als Herausgeber statt „Unbekannt", und auf diesem Rechner
+erscheint keine Warnung mehr. Auf fremden Rechnern bleibt sie — dort ist das Zertifikat nicht
+hinterlegt, und das ist genau der Zweck der Übung.
+
+Damit **GitHub Actions** signiert, muss das Zertifikat als `.pfx` exportiert und base64-kodiert
+in ein Repository-Secret gelegt werden; der Workflow importiert es dann vor dem Build. Solange
+kein solches Secret existiert, baut der Workflow unverändert unsigniert weiter.
+
+## Autor
+
+Patrick Schauss · <info@patrickschauss.de> · [patrickschauss.de](https://patrickschauss.de)
+
+Diese Angaben stehen auch in `src-tauri/tauri.conf.json` unter `bundle` und erscheinen dadurch
+im Installer sowie in den Dateieigenschaften der `.exe`.

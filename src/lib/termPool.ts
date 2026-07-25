@@ -196,6 +196,60 @@ export function write(sessionId: string, bytes: Uint8Array): void {
   pool.get(sessionId)?.term.write(bytes);
 }
 
+/** Messwerte zur Fehlersuche beim Auswahl-Versatz (siehe `diagnose`). */
+export interface TerminalDiagnostics {
+  devicePixelRatio: number;
+  /** Zeilenhöhe, die xterm annimmt — es setzt sie selbst als `style.height` je Zeile. */
+  angenommeneZeilenhoehe: number;
+  /** Tatsächlicher Abstand zweier aufeinanderfolgender Zeilen im Layout. */
+  echterZeilenabstand: number;
+  /** Auseinanderdriften über zehn Zeilen. Der Wert, auf den es ankommt. */
+  driftNachZehnZeilen: number;
+  /** Abstand zwischen Oberkante des Bezugselements der Mausrechnung und der ersten Zeile. */
+  versatzObenPx: number;
+  schriftart: string;
+}
+
+/**
+ * Liest die Zahlen aus, die den Auswahl-Versatz erklären würden.
+ *
+ * `SelectionService` rechnet die Zeile als `(clientY − screenElement.top) / Zellenhöhe`. Zwei
+ * Dinge können dabei schiefgehen, und genau die werden hier gemessen:
+ * - ein **konstanter** Versatz oben (etwas schiebt die Zeilen nach unten), oder
+ * - ein **wachsender** Fehler, wenn der tatsächliche Zeilenabstand von der angenommenen
+ *   Zellenhöhe abweicht — dann stimmt die Auswahl oben noch und wird nach unten immer falscher.
+ *
+ * Bewusst ohne Zugriff auf xterms private Interna: die angenommene Höhe steht als `style.height`
+ * an jeder Zeile, weil der DOM-Renderer sie selbst dort hineinschreibt.
+ *
+ * Existiert nur, weil sich der Fehler in Firefox nicht nachstellen ließ — die Zahlen müssen aus
+ * dem echten WebView2 kommen.
+ */
+export function diagnose(sessionId: string): TerminalDiagnostics | null {
+  const entry = pool.get(sessionId);
+  if (!entry) return null;
+
+  const screen = entry.el.querySelector(".xterm-screen");
+  const rows = entry.el.querySelector(".xterm-rows");
+  if (!screen || !rows || rows.children.length < 11) return null;
+
+  const zeile = (i: number) => (rows.children[i] as HTMLElement).getBoundingClientRect();
+  const angenommen = parseFloat(
+    (rows.children[0] as HTMLElement).style.height || "0",
+  );
+  const echt = zeile(1).top - zeile(0).top;
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    devicePixelRatio: window.devicePixelRatio,
+    angenommeneZeilenhoehe: round(angenommen),
+    echterZeilenabstand: round(echt),
+    driftNachZehnZeilen: round(zeile(10).top - zeile(0).top - 10 * angenommen),
+    versatzObenPx: round(rows.getBoundingClientRect().top - screen.getBoundingClientRect().top),
+    schriftart: entry.term.options.fontFamily ?? "",
+  };
+}
+
 /** Entfernt das Terminal endgültig (Session wirklich beendet/gekillt, nicht nur detached/
  * ausgeblendet) — disposed xterm + Addons, entfernt das `<div>` aus dem DOM und den Pool-Eintrag. */
 export function dispose(sessionId: string): void {

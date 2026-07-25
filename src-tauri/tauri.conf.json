@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "claudedeck",
+  "productName": "ClaudeDeck",
   "version": "0.1.0",
-  "identifier": "com.claudedeck.app",
+  "identifier": "de.patrickschauss.claudedeck",
   "mainBinaryName": "claudedeck",
   "build": {
     "frontendDist": "../dist",
@@ -27,6 +27,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Patrick Schauss",
+    "copyright": "© 2026 Patrick Schauss",
+    "homepage": "https://patrickschauss.de",
+    "category": "DeveloperTool",
+    "shortDescription": "Claude-Code-Sessions auf dem Homelab-Server verwalten",
+    "longDescription": "ClaudeDeck verbindet sich per SSH mit einem Homelab-Server, listet die dortigen tmux-Sessions und öffnet sie als vollwertige Terminals — mehrere parallel über eine gemultiplexte Verbindung. Dazu Befehls-Katalog, Ablage mit Dateivorschau und Verbindungsprofile.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
