@@ -42,7 +42,30 @@ jobs:
           "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
           Write-Host "Zertifikat eingespielt: $($cert.Subject)"
 
-      - name: Bauen
+      # Zwei Durchgänge mit dem Signieren dazwischen. `tauri build` signiert nur den
+      # Installer, nicht die portable .exe daneben — gemessen im Lauf 30174287866. Wird
+      # die Binärdatei vor dem Bündeln signiert, trägt auch die Kopie im MSI die
+      # Signatur. Der zweite Durchgang übersetzt nichts neu, cargo überspringt ihn.
+      - name: Binärdatei bauen
+        shell: pwsh
+        run: |
+          npm run tauri build -- --no-bundle
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Portable .exe signieren
+        if: steps.cert.outputs.thumbprint != ''
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+        run: |
+          $c = Get-Item "Cert:\CurrentUser\My\$env:THUMBPRINT"
+          $r = Set-AuthenticodeSignature -FilePath 'target\release\claudedeck.exe' `
+                 -Certificate $c -HashAlgorithm SHA256 `
+                 -TimestampServer 'http://timestamp.digicert.com'
+          Write-Host "claudedeck.exe : $($r.Status)"
+          if (-not $r.SignerCertificate) { throw 'Signieren der portablen .exe fehlgeschlagen.' }
+
+      - name: Bündeln
         shell: pwsh
         env:
           THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
