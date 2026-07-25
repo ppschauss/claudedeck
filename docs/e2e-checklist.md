@@ -303,6 +303,21 @@ glibc still auf ASCII zurückfiel. Jetzt wird zur Laufzeit eine vorhandene UTF-8
 - [ ] „Befehle" und „Ablage" lassen sich wechseln; `Strg+B` klappt weiterhin das ganze Panel zu.
 - [ ] Model und Arbeitsstärke stehen **nur noch** im Einstellungen-Dialog, nicht mehr im Panel.
 
+## M9a — xterm-Stylesheet (Auswahl-Versatz)
+
+`@xterm/xterm/css/xterm.css` wurde seit M4 **nie eingebunden**. Im Browser nachgemessen (xterm
+6.0): die Zeilen standen dadurch 63px zu tief bei 22px Zellenhöhe — 2,9 Zeilen —, während
+`SelectionService` weiter ab Oberkante rechnete.
+
+- [ ] Text mit der Maus markieren: die Markierung liegt **genau unter dem Zeiger**, nicht ein
+      paar Zeilen darunter.
+- [ ] Auch weit unten im Terminal markieren — der Versatz war überall gleich groß, ein Rest
+      würde also unten genauso auffallen.
+- [ ] Doppelklick markiert das Wort unter dem Zeiger.
+- [ ] Terminal-Scrollbalken erscheint innerhalb des Terminals; mit dem Rad scrollt der
+      Scrollback, nicht das Fenster.
+- [ ] Auswahl kopieren und einfügen liefert den markierten Text.
+
 ## Bekannte Einschränkungen / noch nicht abgenommen
 
 - **Auth::Key-Pfad ungetestet.** `ConnectGate` unterscheidet aktuell nicht zwischen

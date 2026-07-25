@@ -11,6 +11,14 @@
  * KEIN WebGL-Addon in M4/M5 (YAGNI + Kontext-Limit bei vielen parallelen Terminals) — erst bei
  * konkretem Perf-Bedarf nachrüsten.
  */
+// Muss mit — und zwar hier, direkt neben dem Terminal, nicht irgendwo in main.tsx: xterm bringt
+// nur Farben und Schriften selbst mit (`DomRenderer._injectCss`), die strukturellen Regeln
+// stehen ausschließlich in dieser Datei. Ohne sie bleibt `.xterm-char-measure-element` sichtbar
+// im Textfluss stehen und schiebt die Zeilen ~63px (knapp 3 Zeilen) nach unten, während
+// `SelectionService` weiter ab Oberkante rechnet — die Maus markiert dann ein paar Zeilen zu
+// tief. Außerdem fehlt `.xterm-viewport` sein `overflow-y: scroll`, weshalb das Terminal seinen
+// Container sprengt statt intern zu scrollen. `termPool.test.ts` wacht darüber.
+import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal, type IDisposable } from "@xterm/xterm";
