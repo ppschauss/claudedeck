@@ -15,6 +15,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { altGraphChar } from "./keyboard";
+import { DEFAULT_DISPLAY, themeById, type TerminalDisplay } from "./terminalTheme";
 
 interface TermEntry {
   term: Terminal;
@@ -25,6 +26,58 @@ interface TermEntry {
 }
 
 const pool = new Map<string, TermEntry>();
+
+/**
+ * Aktuelle Darstellung. Wird von `applyDisplay()` gesetzt und von `ensure()` mitbenutzt, damit
+ * ein *neu* geöffnetes Terminal sofort im gewählten Schema erscheint statt kurz in der Vorgabe
+ * aufzublitzen.
+ */
+let currentDisplay: TerminalDisplay = DEFAULT_DISPLAY;
+
+/** Übersetzt die Einstellungen in xterm-Optionen. */
+function displayOptions(d: TerminalDisplay) {
+  return {
+    theme: themeById(d.themeId).xterm,
+    fontFamily: d.fontFamily,
+    fontSize: d.fontSize,
+    lineHeight: d.lineHeight,
+    letterSpacing: d.letterSpacing,
+    cursorStyle: d.cursorStyle,
+    cursorBlink: d.cursorBlink,
+    scrollback: d.scrollback,
+  };
+}
+
+/**
+ * Übernimmt Schema und Darstellung für **alle** offenen Terminals und für künftige.
+ *
+ * Der `fit()`-Aufruf ist der eigentlich kritische Teil: eine geänderte Schriftgröße oder
+ * Zeilenhöhe verändert, wie viele Zeichen ins Fenster passen. Ohne erneutes Einpassen behielte
+ * tmux die alte Geometrie, und die Ausgabe würde an falschen Stellen umbrechen. `fit()` meldet
+ * geänderte `cols`/`rows` über xterms `onResize` — in `ensure()` verdrahtet — von selbst ans
+ * Backend weiter.
+ *
+ * Unsichtbare Terminals werden dabei übersprungen: an einem `display: none`-Element misst
+ * `fit()` Unsinn (Höhe 0). Sie werden ohnehin beim nächsten `show()` eingepasst.
+ */
+export function applyDisplay(display: TerminalDisplay): void {
+  currentDisplay = display;
+  const opts = displayOptions(display);
+
+  for (const entry of pool.values()) {
+    const o = entry.term.options;
+    o.theme = opts.theme;
+    o.fontFamily = opts.fontFamily;
+    o.fontSize = opts.fontSize;
+    o.lineHeight = opts.lineHeight;
+    o.letterSpacing = opts.letterSpacing;
+    o.cursorStyle = opts.cursorStyle;
+    o.cursorBlink = opts.cursorBlink;
+    o.scrollback = opts.scrollback;
+
+    if (entry.el.style.display !== "none") entry.fit.fit();
+  }
+}
 
 /**
  * Erzeugt (falls noch nicht vorhanden) das Terminal für `sessionId` in einem noch nicht ins DOM
@@ -42,7 +95,7 @@ export function ensure(
   const existing = pool.get(sessionId);
   if (existing) return existing;
 
-  const term = new Terminal({ scrollback: 10000, fontFamily: "Consolas, monospace" });
+  const term = new Terminal(displayOptions(currentDisplay));
   const fit = new FitAddon();
   const search = new SearchAddon();
   term.loadAddon(fit);
