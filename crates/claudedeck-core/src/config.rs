@@ -16,6 +16,10 @@ pub struct Config {
     pub available_models: Vec<String>,
     /// Aussehen des Terminals.
     pub terminal: TerminalSettings,
+    /// Woran ein Projektordner erkannt wird. Ohne diesen Filter listet der Scan auf einem
+    /// Unraid-Server jedes Docker-Datenverzeichnis mit (gemessen: 88 statt 9 Einträge). Leere
+    /// Liste heißt „kein Filter".
+    pub project_markers: Vec<String>,
     /// Alle hinterlegten Verbindungsziele. Nach [`migrate_profiles`] nie leer.
     pub profiles: Vec<NamedProfile>,
     /// ID des gewählten Profils; zeigt sie ins Leere, greift [`Config::active`] auf das erste zu.
@@ -184,6 +188,11 @@ impl Default for Config {
             notifications: NotifySettings::default(),
             defaults: SessionDefaults::default(),
             terminal: TerminalSettings::default(),
+            project_markers: vec![
+                ".git".to_string(),
+                ".claude".to_string(),
+                "CLAUDE.md".to_string(),
+            ],
             // Bleibt leer — `migrate_profiles` füllt es aus `profile`, damit es genau einen Weg
             // gibt, wie ein Profil entsteht.
             profiles: vec![],
@@ -353,6 +362,7 @@ mod tests {
             profiles: vec![NamedProfile::default()],
             active_profile: Some("default".to_string()),
             auto_connect: false,
+            project_markers: vec![".git".to_string()],
         };
 
         save_to(&config_file, &original).unwrap();

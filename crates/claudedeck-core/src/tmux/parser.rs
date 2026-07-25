@@ -96,6 +96,40 @@ pub fn merge(sessions: Vec<RawSession>, panes: Vec<RawPane>) -> Vec<SessionInfo>
         .collect()
 }
 
+/// Ein Projektordner aus [`super::commands::cmd_scan_projects`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectEntry {
+    pub path: String,
+    /// Letztes Segment des Pfades — das, was in der Sidebar steht.
+    pub name: String,
+    /// Unix-Sekunden der neuesten Änderung im Projekt; treibt die Sortierung „Zuletzt aktiv".
+    pub modified: i64,
+}
+
+/// Zerlegt die `<unix-zeit>\t<pfad>`-Zeilen des Projekt-Scans.
+///
+/// Tab als Trenner, weil Pfade Leerzeichen enthalten dürfen. Unbrauchbare Zeilen (kein Tab,
+/// nicht-numerische Zeit, leerer Pfad) werden übersprungen statt die ganze Liste zu kippen —
+/// ein Projekt weniger ist besser als eine leere Sidebar.
+pub fn parse_projects(out: &str) -> Vec<ProjectEntry> {
+    out.lines()
+        .filter_map(|line| {
+            let (stamp, path) = line.split_once('\t')?;
+            let modified = stamp.trim().parse::<i64>().ok()?;
+            let path = path.trim_end_matches('/');
+            if path.is_empty() {
+                return None;
+            }
+            let name = path.rsplit('/').next().filter(|n| !n.is_empty())?;
+            Some(ProjectEntry {
+                path: path.to_string(),
+                name: name.to_string(),
+                modified,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +243,56 @@ mod tests {
         let s = parse_sessions(out);
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].name, "cc-ok");
+    }
+}
+
+#[cfg(test)]
+mod project_tests {
+    use super::*;
+
+    #[test]
+    fn liest_zeitstempel_pfad_und_name() {
+        let out = "1753400000\t/mnt/cache/appdata/claudedeck\n";
+        let projects = parse_projects(out);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, "/mnt/cache/appdata/claudedeck");
+        assert_eq!(projects[0].name, "claudedeck");
+        assert_eq!(projects[0].modified, 1_753_400_000);
+    }
+
+    #[test]
+    fn liest_mehrere_zeilen() {
+        let out = "100\t/a/eins\n200\t/b/zwei\n";
+        let names: Vec<_> = parse_projects(out).into_iter().map(|p| p.name).collect();
+        assert_eq!(names, vec!["eins", "zwei"]);
+    }
+
+    /// Pfade mit Leerzeichen sind der Grund für den Tab als Trenner.
+    #[test]
+    fn behaelt_leerzeichen_im_pfad() {
+        let projects = parse_projects("100\t/mnt/mein projekt\n");
+        assert_eq!(projects[0].path, "/mnt/mein projekt");
+        assert_eq!(projects[0].name, "mein projekt");
+    }
+
+    // Eine kaputte Zeile darf nicht die ganze Liste kippen — lieber ein Projekt weniger als gar
+    // keine Sidebar.
+    #[test]
+    fn ueberspringt_unbrauchbare_zeilen() {
+        let out = "kein-tab\n\nabc\t/a/nichtnumerisch\n100\t/a/gut\n\t/a/ohne-zeit\n";
+        let projects = parse_projects(out);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "gut");
+    }
+
+    #[test]
+    fn liefert_leere_liste_bei_leerer_ausgabe() {
+        assert!(parse_projects("").is_empty());
+        assert!(parse_projects("\n\n").is_empty());
+    }
+
+    #[test]
+    fn ignoriert_abschliessende_schraegstriche() {
+        assert_eq!(parse_projects("100\t/a/projekt/\n")[0].name, "projekt");
     }
 }

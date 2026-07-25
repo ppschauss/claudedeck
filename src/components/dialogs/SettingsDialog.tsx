@@ -437,6 +437,25 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 Diese Verzeichnisse durchsucht „Startbar" nach Projekten.
               </span>
             </Field>
+
+            <Field label="Projekt-Merkmale (eines pro Zeile)">
+              <textarea
+                rows={3}
+                value={config.project_markers.join("\n")}
+                onChange={(e) =>
+                  update({
+                    project_markers: e.target.value
+                      .split("\n")
+                      .map((m) => m.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+              <span className="settings-hint">
+                Ein Ordner gilt nur als Projekt, wenn er eines davon enthält — sonst erscheint
+                jedes Docker-Datenverzeichnis unter „Startbar". Leer lassen hebt den Filter auf.
+              </span>
+            </Field>
           </div>
         )}
 

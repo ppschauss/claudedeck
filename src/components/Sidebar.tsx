@@ -195,13 +195,14 @@ export function Sidebar() {
     }));
   }, [running, openNames, query, sortBy]);
 
-  // Projekte aus den `scan_paths` haben keinerlei Zeitstempel — bei Zeitsortierungen landen sie
-  // laut `sortByKey` hinten und werden dort nach Namen geordnet.
+  // `modified` kommt in Sekunden vom Backend, `SortMeta` rechnet in Millisekunden wie
+  // `Date.now()` — ohne die Umrechnung stünden Projekte bei „Zuletzt aktiv" fälschlich immer
+  // hinter jeder Session.
   const startableView = useMemo(() => {
     const list = startable.filter((p) => matchesQuery(p.name, query));
     return sortByKey(list, sortBy, (p) => ({
       name: p.name,
-      createdAt: null,
+      createdAt: p.modified * 1000,
       lastOutputAt: null,
     }));
   }, [startable, query, sortBy]);

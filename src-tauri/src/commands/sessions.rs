@@ -56,7 +56,9 @@ use claudedeck_core::config;
 use claudedeck_core::ssh::{ExecOutput, PtyEvent, SshConnection};
 use claudedeck_core::tmux::commands as tmux_cmd;
 use claudedeck_core::tmux::names;
-use claudedeck_core::tmux::parser::{merge, parse_panes, parse_sessions, SessionInfo, SessionKind};
+use claudedeck_core::tmux::parser::{
+    merge, parse_panes, parse_projects, parse_sessions, SessionInfo, SessionKind,
+};
 use claudedeck_core::util::should_flush;
 
 use crate::error::ApiError;
@@ -131,6 +133,9 @@ impl From<SessionInfo> for SessionInfoDto {
 pub struct Project {
     pub path: String,
     pub name: String,
+    /// Unix-Sekunden der neuesten Änderung — Grundlage der Sortierung „Zuletzt aktiv", die für
+    /// Projekte vorher mangels Zeitstempel wirkungslos war.
+    pub modified: i64,
 }
 
 #[derive(Serialize, Clone)]
@@ -370,25 +375,28 @@ pub async fn list_sessions(
 
     let cfg = config::load_from(&config::config_path());
     let scan_out = conn
-        .exec_capture(&tmux_cmd::cmd_scan_projects(&cfg.scan_paths))
+        .exec_capture(&tmux_cmd::cmd_scan_projects(
+            &cfg.scan_paths,
+            &cfg.project_markers,
+        ))
         .await
         .map_err(|e| note_ssh_failure(&app, e))?;
 
     let running_names: HashSet<String> = running.iter().map(|s| s.name.clone()).collect();
 
-    let startable: Vec<Project> = scan_out
-        .stdout
-        .lines()
-        .filter(|l| !l.is_empty())
-        .filter_map(|path| {
-            let display_name = Path::new(path).file_name()?.to_str()?.to_string();
-            let session_name = format!("cc-{}", names::sanitize(&display_name));
+    // Zerlegen macht `parse_projects` (pure, mit Fixtures getestet) — hier bleibt nur die
+    // Fachregel: was schon als Session läuft, gehört nicht mehr unter „Startbar".
+    let startable: Vec<Project> = parse_projects(&scan_out.stdout)
+        .into_iter()
+        .filter_map(|entry| {
+            let session_name = format!("cc-{}", names::sanitize(&entry.name));
             if running_names.contains(&session_name) {
                 None
             } else {
                 Some(Project {
-                    path: path.to_string(),
-                    name: display_name,
+                    path: entry.path,
+                    name: entry.name,
+                    modified: entry.modified,
                 })
             }
         })

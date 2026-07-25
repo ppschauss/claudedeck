@@ -150,6 +150,8 @@ export interface Config {
   notifications: NotifySettings;
   defaults: SessionDefaults;
   available_models: string[];
+  /** Woran ein Projektordner erkannt wird — leere Liste heißt „kein Filter". */
+  project_markers: string[];
   /** `TerminalSettings` — die EINZIGE Teilstruktur mit `rename_all = "camelCase"`, damit sie
    * ohne Umbenennung als `TerminalDisplay` (terminalTheme.ts) durchgereicht werden kann. */
   terminal: TerminalDisplay;
@@ -172,6 +174,8 @@ export interface SessionInfo {
 export interface Project {
   path: string;
   name: string;
+  /** Unix-**Sekunden** der neuesten Änderung im Projekt (nicht Millisekunden). */
+  modified: number;
 }
 
 /** `catalog::CommandKind` (serde `rename_all = "camelCase"`). */
@@ -194,6 +198,23 @@ export interface Connector {
   url: string;
   status: string;
   connected: boolean;
+}
+
+/** `sftp::RemoteEntry` — ein Eintrag in einem entfernten Verzeichnis. */
+export interface RemoteEntry {
+  name: string;
+  /** Vollständiger Pfad, vom Backend gebaut — die Oberfläche setzt nie selbst Pfade zusammen. */
+  path: string;
+  isDir: boolean;
+  size: number;
+  /** Unix-**Sekunden**; `0`, wenn der Server nichts meldet. */
+  modified: number;
+}
+
+/** `commands::files::FilePreview` — Bildinhalt als Data-URL-Bestandteile. */
+export interface FilePreview {
+  mime: string;
+  dataB64: string;
 }
 
 /** `catalog::Catalog`. */
@@ -291,6 +312,21 @@ export function listSessions(): Promise<SessionList> {
  */
 export function listCommands(projectDir: string | null): Promise<Catalog> {
   return invoke("list_commands", { projectDir });
+}
+
+/** Listet ein entferntes Verzeichnis (Ordner zuerst, darin neueste zuerst). */
+export function listDirectory(path: string): Promise<RemoteEntry[]> {
+  return invoke("list_directory", { path });
+}
+
+/** Liest ein Bild für die Vorschau. Wirft bei Dateien über 8 MB — dann nur Download anbieten. */
+export function previewFile(path: string): Promise<FilePreview> {
+  return invoke("preview_file", { path });
+}
+
+/** Lädt eine Datei in den Downloads-Ordner und liefert den lokalen Pfad zurück. */
+export function downloadFile(path: string): Promise<string> {
+  return invoke("download_file", { path });
 }
 
 /** Öffnet/hängt eine tmux-Session an. `onOutput` wird für jeden (gebatchten,

@@ -10,7 +10,11 @@ const running: SessionInfo = {
   created: 1000,
   managed: true,
 };
-const startable: Project = { path: "/mnt/cache/appdata/habitbot", name: "habitbot" };
+const startable: Project = {
+  path: "/mnt/cache/appdata/habitbot",
+  name: "habitbot",
+  modified: 1_753_400_000,
+};
 
 function reset() {
   useSessionStore.setState({

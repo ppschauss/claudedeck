@@ -3,7 +3,7 @@
 //! Wie bei `tmux::commands` laufen alle Werte durch `shell_quote` — Projektpfade kommen aus
 //! `pane_current_path` und sind damit Fremdeingabe.
 
-use crate::tmux::commands::{shell_quote, LOCALE_PREFIX};
+use crate::tmux::commands::{shell_quote, LOCALE_SETUP};
 
 /// Trennmarke vor jedem Dateipfad im Sammel-Output. Bewusst ein Präfix am Zeilenanfang statt
 /// eines Feldtrenners: Frontmatter enthält beliebige Zeichen, aber keine Zeile beginnt mit
@@ -50,15 +50,20 @@ pub fn cmd_scan_catalog(project_dir: Option<&str>) -> String {
         ));
     }
 
+    // KEIN `sh -c '…'`-Wrapper: darin schlossen die von `shell_quote` gesetzten
+    // Anführungszeichen den Wrapper vorzeitig, und ein Projektpfad mit Leerzeichen ergab einen
+    // Syntaxfehler statt einer Trefferliste. Das Kommando läuft ohnehin durch die Login-Shell
+    // des SSH-Servers. Die Locale steht deshalb als `export`, denn eine Zuweisung darf nur vor
+    // einem einfachen Kommando stehen — nicht vor `{ … }` oder einer Pipeline.
     format!(
-        "{LOCALE_PREFIX} sh -c '{{ {} ; }} | while IFS= read -r f; do printf \"{FILE_MARKER}%s\\n\" \"$f\"; head -c {HEAD_BYTES} \"$f\"; printf \"\\n\"; done' 2>/dev/null || true",
+        "{LOCALE_SETUP} {{ {} ; }} | while IFS= read -r f; do printf '{FILE_MARKER}%s\\n' \"$f\"; head -c {HEAD_BYTES} \"$f\"; printf '\\n'; done 2>/dev/null || true",
         finds.join(" ; ")
     )
 }
 
 /// Liest die Connector-Liste über die CLI statt über `~/.claude.json` — siehe Modulkommentar.
 pub fn cmd_mcp_list() -> String {
-    format!("{LOCALE_PREFIX} claude mcp list 2>/dev/null || true")
+    format!("{LOCALE_SETUP} claude mcp list 2>/dev/null || true")
 }
 
 #[cfg(test)]
@@ -93,10 +98,49 @@ mod tests {
     }
 
     #[test]
-    fn scan_setzt_locale_prefix_und_endet_fehlertolerant() {
+    fn scan_setzt_locale_und_endet_fehlertolerant() {
         let cmd = cmd_scan_catalog(None);
-        assert!(cmd.starts_with(LOCALE_PREFIX));
+        assert!(cmd.starts_with(LOCALE_SETUP));
         assert!(cmd.ends_with("|| true"));
+    }
+
+    /// Der Fehler, den die String-Prüfung darüber nicht fand: im früheren `sh -c '…'`-Wrapper
+    /// zerriss ein Projektpfad mit Leerzeichen das Quoting, und das Kommando endete im
+    /// Syntaxfehler. Deshalb wird hier wirklich ausgeführt.
+    #[test]
+    fn scan_laeuft_mit_leerzeichen_im_projektpfad() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let projekt = tmp.path().join("mein projekt");
+        std::fs::create_dir_all(projekt.join(".claude/agents")).unwrap();
+        std::fs::write(
+            projekt.join(".claude/agents/tester.md"),
+            "---\nname: tester\n---",
+        )
+        .unwrap();
+
+        let cmd = cmd_scan_catalog(Some(&projekt.to_string_lossy()));
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+            .expect("sh muss vorhanden sein");
+
+        assert!(
+            out.status.success(),
+            "Kommando scheiterte:\n{cmd}\nstderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("tester.md"),
+            "Agent nicht gefunden:\n{stdout}"
+        );
+        assert!(stdout.contains(FILE_MARKER), "Trennmarke fehlt:\n{stdout}");
+    }
+
+    #[test]
+    fn scan_hat_keinen_verschachtelten_shell_wrapper() {
+        assert!(!cmd_scan_catalog(Some("/mnt/x")).contains("sh -c"));
     }
 
     #[test]
@@ -107,7 +151,7 @@ mod tests {
     #[test]
     fn mcp_list_ist_fehlertolerant() {
         let cmd = cmd_mcp_list();
-        assert!(cmd.starts_with(LOCALE_PREFIX));
+        assert!(cmd.starts_with(LOCALE_SETUP));
         assert!(cmd.contains("claude mcp list"));
         assert!(cmd.ends_with("|| true"));
     }
