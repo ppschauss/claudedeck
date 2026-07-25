@@ -139,7 +139,10 @@ mod tests {
     #[test]
     fn available_models_sind_per_default_die_aliase() {
         let cfg = Config::default();
-        assert_eq!(cfg.available_models, vec!["opus", "sonnet", "haiku", "fable"]);
+        assert_eq!(
+            cfg.available_models,
+            vec!["opus", "sonnet", "haiku", "fable"]
+        );
     }
 
     /// Eine vor M7 geschriebene config.json darf nicht auf Defaults zurückfallen.
@@ -157,7 +160,10 @@ mod tests {
 
         assert_eq!(cfg.scan_paths, vec!["/mnt/x".to_string()]);
         assert_eq!(cfg.defaults.model, None);
-        assert_eq!(cfg.available_models, vec!["opus", "sonnet", "haiku", "fable"]);
+        assert_eq!(
+            cfg.available_models,
+            vec!["opus", "sonnet", "haiku", "fable"]
+        );
     }
 
     #[test]

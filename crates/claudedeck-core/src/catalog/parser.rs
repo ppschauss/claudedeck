@@ -92,7 +92,10 @@ fn frontmatter_field(body: &str, key: &str) -> Option<String> {
 
 fn unquote(value: &str) -> &str {
     for quote in ['"', '\''] {
-        if let Some(inner) = value.strip_prefix(quote).and_then(|v| v.strip_suffix(quote)) {
+        if let Some(inner) = value
+            .strip_prefix(quote)
+            .and_then(|v| v.strip_suffix(quote))
+        {
             return inner;
         }
     }
@@ -184,8 +187,14 @@ mod tests {
     fn erkennt_agents_und_commands_am_pfad() {
         let raw = format!(
             "{}{}",
-            block("/root/.claude/agents/explore.md", "---\nname: Explore\ndescription: Sucht.\n---"),
-            block("/root/.claude/commands/deploy.md", "---\nname: deploy\ndescription: Rollt aus.\n---"),
+            block(
+                "/root/.claude/agents/explore.md",
+                "---\nname: Explore\ndescription: Sucht.\n---"
+            ),
+            block(
+                "/root/.claude/commands/deploy.md",
+                "---\nname: deploy\ndescription: Rollt aus.\n---"
+            ),
         );
         let entries = parse_catalog(&raw, None);
         assert_eq!(entries[0].kind, CommandKind::Agent);
@@ -209,7 +218,10 @@ mod tests {
         let raw = format!(
             "{}{}",
             block("/root/.claude/skills/global-skill/SKILL.md", SKILL),
-            block("/mnt/cache/appdata/claudedeck/.claude/skills/spike/SKILL.md", SKILL),
+            block(
+                "/mnt/cache/appdata/claudedeck/.claude/skills/spike/SKILL.md",
+                SKILL
+            ),
         );
         let entries = parse_catalog(&raw, Some("/mnt/cache/appdata/claudedeck"));
         assert_eq!(entries[0].scope, CommandScope::Global);
@@ -228,7 +240,10 @@ mod tests {
     /// Bei `SKILL.md` ist der Ordnername der sprechende Teil, nicht der Dateiname.
     #[test]
     fn nutzt_bei_skill_md_den_ordnernamen_als_fallback() {
-        let raw = block("/root/.claude/skills/mein-skill/SKILL.md", "kein Frontmatter");
+        let raw = block(
+            "/root/.claude/skills/mein-skill/SKILL.md",
+            "kein Frontmatter",
+        );
         let entries = parse_catalog(&raw, None);
         assert_eq!(entries[0].name, "mein-skill");
     }
@@ -275,7 +290,10 @@ mod tests {
 
     #[test]
     fn ueberspringt_vorspann_vor_der_ersten_marke() {
-        let raw = format!("find: kein Zugriff\n{}", block("/root/.claude/agents/a.md", "---\nname: a\n---"));
+        let raw = format!(
+            "find: kein Zugriff\n{}",
+            block("/root/.claude/agents/a.md", "---\nname: a\n---")
+        );
         let entries = parse_catalog(&raw, None);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "a");

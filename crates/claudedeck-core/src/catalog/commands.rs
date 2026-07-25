@@ -72,7 +72,9 @@ mod tests {
         assert!(cmd.contains("$HOME/.claude/agents"));
         assert!(cmd.contains("$HOME/.claude/commands"));
         assert!(cmd.contains("plugins/cache"));
-        assert!(!cmd.contains("/.claude/skills -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null'"));
+        assert!(
+            !cmd.contains("/.claude/skills -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null'")
+        );
     }
 
     #[test]

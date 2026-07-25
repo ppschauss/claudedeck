@@ -223,8 +223,14 @@ mod tests {
 
     #[test]
     fn claude_invocation_laesst_nicht_gesetzte_flags_weg() {
-        assert_eq!(claude_invocation(Some("sonnet"), None), "claude --model 'sonnet'");
-        assert_eq!(claude_invocation(None, Some("max")), "claude --effort 'max'");
+        assert_eq!(
+            claude_invocation(Some("sonnet"), None),
+            "claude --model 'sonnet'"
+        );
+        assert_eq!(
+            claude_invocation(None, Some("max")),
+            "claude --effort 'max'"
+        );
     }
 
     /// Die Werte stammen aus einer von Hand editierbaren config.json.
