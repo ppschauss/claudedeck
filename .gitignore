@@ -4,3 +4,4 @@ target/
 .cargo-cache/
 secrets.env
 *.log
+dist-windows/

@@ -146,6 +146,61 @@ manuellen Refresh.
 Baustelle des Plans (Task-6-Report: „Kein echter Reconnect je beobachtet") — hier ist die
 sorgfältigste manuelle Prüfung nötig.
 
+## M7 — UTF-8/DE-Layout, Sortierung & Suche, Befehls-Panel, Model/Effort
+
+Spec: `docs/superpowers/specs/2026-07-25-claudedeck-m7-design.md`. Die reine Entscheidungslogik
+(`keyboard.ts`, `sessionFilter.ts`, `catalogFilter.ts`, `effort.ts`, `catalog/parser.rs`,
+`tmux/commands.rs`) ist unit-getestet; die folgenden Punkte lassen sich nur im echten
+Windows-Build mit deutschem Tastaturlayout prüfen.
+
+### Zeichen und Tastatur
+
+- [ ] **Ausgabe:** Umlaute in tmux-Session-Namen und Claude-Code-Ausgaben werden korrekt
+      dargestellt (nicht `Ã¤`).
+- [ ] **Ausgabe:** Claude Codes Rahmenzeichen erscheinen als durchgehende Linien (nicht `???`
+      oder Kraut).
+- [ ] **Eingabe:** `ä ö ü ß` direkt getippt landen korrekt im Terminal.
+- [ ] **Eingabe AltGr:** `AltGr+Q/E/7/8/9/0/ß/<` ergeben `@ € { [ ] } \ |`.
+- [ ] **Eingabe AltGr:** Die Zeichen kommen **einfach** an, nicht doppelt (Guard gegen den
+      `keyup`-Durchlauf und die versteckte Textarea in `termPool.ts`).
+- [ ] **Tote Tasten:** `` ` ``+Leertaste ergibt `` ` ``; `^`+`a` ergibt `^a`; `´`+`e` ergibt `é`.
+- [ ] **Strg bleibt Strg:** `Strg+C` bricht weiterhin ab (erscheint nicht als Buchstabe `c`).
+- [ ] **AltGr+F** öffnet **nicht** die Scrollback-Suche; `Strg+F` öffnet sie weiterhin.
+
+### Session-Sortierung und -Suche
+
+- [ ] Suchfeld filtert alle drei Gruppen (Angehängt/Läuft/Startbar) gleichzeitig.
+- [ ] Leeres Suchfeld zeigt wieder alles; Gruppen ohne Treffer zeigen `–`.
+- [ ] Umlaut-Suche funktioniert (`löffel` findet `cc-loeffelholz` **nicht**, `cc-löffelholz` schon).
+- [ ] Sortierung „Name", „Zuletzt aktiv" und „Startzeit" ändern die Reihenfolge sichtbar.
+- [ ] Startbare Projekte stehen bei den Zeitsortierungen hinten (sie haben keinen Zeitstempel).
+
+### Befehls-Panel
+
+- [ ] `Strg+B` und die schmale Leiste rechts klappen das Panel auf und zu.
+- [ ] Beim Aus-/Einklappen passt sich die Terminalbreite an (kein abgeschnittener Text; der
+      `ResizeObserver` in `TerminalHost.tsx` muss die Breitenänderung sehen).
+- [ ] Skills, Agents, Befehle und Connectors erscheinen in je einem aufklappbaren Akkordeon.
+- [ ] Connectors zeigen den Status aus `claude mcp list` (verbunden `●` / nicht verbunden `○`).
+- [ ] Klick auf einen Eintrag fügt `/name ` ins Terminal ein und sendet **kein** Enter.
+- [ ] Klick auf einen Agent fügt den nackten Namen ohne `/` ein.
+- [ ] Ohne aktive Session sind die Einträge deaktiviert (kein stiller Klick ins Leere).
+- [ ] Projektlokale Einträge sind mit `●` markiert und stehen in ihrer Gruppe oben.
+- [ ] Sessionwechsel in ein anderes Projekt lädt die projektlokalen Einträge neu.
+- [ ] Die Panel-Suche findet Einträge auch über ihre **Beschreibung**, nicht nur den Namen.
+
+### Model und Arbeitsstärke
+
+- [ ] **Zuerst prüfen:** Nimmt `/effort high` das Argument inline entgegen, oder öffnet `/effort`
+      einen interaktiven Picker? Bei Picker greift der Fallback aus der Spec (nur das nackte
+      Kommando einfügen) — dann sind die beiden folgenden Punkte entsprechend anzupassen.
+- [ ] Model-Auswahl fügt `/model <name> ` in die aktive Session ein.
+- [ ] Der Stärke-Regler fügt `/effort <stufe> ` ein und zeigt die Stufe im Label an.
+- [ ] Nach App-Neustart steht die zuletzt gewählte Vorgabe wieder im Regler (aus `config.json`).
+- [ ] Eine neu über „+ startbar" gestartete Session läuft mit den Flags — auf dem Server prüfbar
+      mit `ps -ef | grep claude` (erwartet: `claude --model … --effort …`).
+- [ ] Eine `config.json` **ohne** die neuen Felder lädt weiterhin ohne Fehler.
+
 ## Bekannte Einschränkungen / noch nicht abgenommen
 
 - **Auth::Key-Pfad ungetestet.** `ConnectGate` unterscheidet aktuell nicht zwischen
