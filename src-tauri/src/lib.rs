@@ -27,6 +27,7 @@ pub fn run() {
             commands::resize_session,
             commands::close_session,
             commands::kill_session,
+            commands::list_commands,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

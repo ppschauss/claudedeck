@@ -156,7 +156,7 @@ fn not_connected() -> ApiError {
 /// Klont das `Arc<SshConnection>` aus dem State — der Aufrufer hält den `AppInner`-Guard nur für
 /// diesen einen Klon und droppt ihn danach, bevor er mit dem `Arc` einen SSH-Await macht (Fix
 /// Critical: der globale Lock wird nie über einen SSH-Await gehalten).
-fn require_conn(inner: &AppInner) -> Result<Arc<SshConnection>, ApiError> {
+pub(crate) fn require_conn(inner: &AppInner) -> Result<Arc<SshConnection>, ApiError> {
     inner.conn.clone().ok_or_else(not_connected)
 }
 
@@ -206,7 +206,7 @@ fn ssh_to_api<E: std::fmt::Display>(err: E) -> ApiError {
 /// Verlust-Trigger ("Fehlpfade von write/exec"), neben dem periodischen Keepalive im
 /// Supervisor selbst. Wird an JEDER Stelle genutzt, die einen echten SSH-Transport-Fehler
 /// (nicht: `TmuxMissing`, nicht: "Session-ID unbekannt") in `ApiError` übersetzt.
-fn note_ssh_failure<E: std::fmt::Display>(app: &AppHandle, err: E) -> ApiError {
+pub(crate) fn note_ssh_failure<E: std::fmt::Display>(app: &AppHandle, err: E) -> ApiError {
     app.state::<ReconnectSupervisor>().trigger_loss();
     ssh_to_api(err)
 }
@@ -469,8 +469,18 @@ pub async fn start_project(
     let session_name =
         names::resolve_collision(&format!("cc-{}", names::sanitize(&basename)), &existing);
 
+    let cfg = config::load_from(&config::config_path());
+
     let new_out = conn
-        .exec_capture(&tmux_cmd::cmd_new_detached(&session_name, &path, "claude"))
+        .exec_capture(&tmux_cmd::cmd_new_detached(
+            &session_name,
+            &path,
+            // Model/Effort aus der Config — der Regler im Befehls-Panel schreibt sie dorthin.
+            &tmux_cmd::claude_invocation(
+                cfg.defaults.model.as_deref(),
+                cfg.defaults.effort.as_deref(),
+            ),
+        ))
         .await
         .map_err(|e| note_ssh_failure(&app, e))?;
     check_tmux_exit(&new_out)?;

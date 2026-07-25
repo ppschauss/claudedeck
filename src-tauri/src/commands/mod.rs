@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod connection;
 pub mod sessions;
 
@@ -6,5 +7,6 @@ pub mod sessions;
 // lib.rs angegebenen Pfad (`commands::connect`) mit-auflösen muss. Eine benannte
 // `pub use connection::{connect, ...}` reexportiert nur die Funktionen selbst, nicht die
 // `__cmd__*`-Items — `generate_handler!` fände sie dann nicht.
+pub use catalog::*;
 pub use connection::*;
 pub use sessions::*;

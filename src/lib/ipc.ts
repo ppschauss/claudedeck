@@ -114,12 +114,20 @@ export interface NotifySettings {
   silence_ms: number;
 }
 
+/** `claudedeck_core::config::SessionDefaults` — `null` heißt „Flag weglassen". */
+export interface SessionDefaults {
+  model: string | null;
+  effort: string | null;
+}
+
 /** `claudedeck_core::config::Config` — kein `rename_all`. */
 export interface Config {
   profile: Profile;
   scan_paths: string[];
   favorites: string[];
   notifications: NotifySettings;
+  defaults: SessionDefaults;
+  available_models: string[];
 }
 
 /** `save_secret`/`has_secret`-Argument — `SecretArgKind` hat `rename_all = "camelCase"`. */
@@ -139,6 +147,34 @@ export interface SessionInfo {
 export interface Project {
   path: string;
   name: string;
+}
+
+/** `catalog::CommandKind` (serde `rename_all = "camelCase"`). */
+export type CommandKind = "skill" | "agent" | "command";
+
+/** `catalog::CommandScope` — `project` = nur in der aktiven Session verfügbar. */
+export type CommandScope = "global" | "project";
+
+/** `catalog::CommandEntry`. `name` ist ohne führenden Schrägstrich gespeichert. */
+export interface CommandEntry {
+  kind: CommandKind;
+  name: string;
+  description: string;
+  scope: CommandScope;
+}
+
+/** `catalog::Connector` aus `claude mcp list`. */
+export interface Connector {
+  name: string;
+  url: string;
+  status: string;
+  connected: boolean;
+}
+
+/** `catalog::Catalog`. */
+export interface Catalog {
+  entries: CommandEntry[];
+  connectors: Connector[];
 }
 
 /** `commands::sessions::SessionList`. */
@@ -213,6 +249,14 @@ export function hasSecret(kind: SecretKind): Promise<boolean> {
 
 export function listSessions(): Promise<SessionList> {
   return invoke("list_sessions");
+}
+
+/**
+ * Liest den Befehls-Katalog vom Server. `projectDir` ist das Arbeitsverzeichnis der aktiven
+ * Session (`SessionInfo.cwd`) — ohne offene Session `null`, dann kommen nur globale Einträge.
+ */
+export function listCommands(projectDir: string | null): Promise<Catalog> {
+  return invoke("list_commands", { projectDir });
 }
 
 /** Öffnet/hängt eine tmux-Session an. `onOutput` wird für jeden (gebatchten,

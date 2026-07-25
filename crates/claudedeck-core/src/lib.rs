@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod config;
 pub mod reconnect;
 pub mod secrets;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import { CommandPanel } from "./components/CommandPanel";
 import { ConnectGate } from "./components/ConnectGate";
 import { NotificationManager } from "./components/NotificationManager";
 import { ReconnectOverlay } from "./components/ReconnectOverlay";
@@ -8,6 +9,7 @@ import { StatusBar } from "./components/StatusBar";
 import { TerminalHost } from "./components/TerminalHost";
 import { ToastHost } from "./components/Toast";
 import { getConfig, onConnectionState, onSessionReattached } from "./lib/ipc";
+import { useCatalogStore } from "./stores/catalogStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 
@@ -61,6 +63,19 @@ function App() {
     };
   }, []);
 
+  // Strg+B klappt das Befehls-Panel auf/zu. `!e.altKey` aus demselben Grund wie beim Strg+F der
+  // Terminal-Suche: AltGr meldet sich unter Windows als Strg+Alt.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        useCatalogStore.getState().toggled();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   useEffect(() => {
     if (!connected) return;
     void getConfig()
@@ -83,11 +98,30 @@ function App() {
       <div className="app-body">
         <Sidebar />
         <TerminalHost />
+        <CommandPanelToggle />
+        <CommandPanel />
       </div>
       <StatusBar host={host} />
       <NotificationManager />
       <ToastHost />
     </div>
+  );
+}
+
+/** Schmale Leiste zwischen Terminal und Panel — der einzige immer sichtbare Weg zum Panel. */
+function CommandPanelToggle() {
+  const open = useCatalogStore((s) => s.open);
+  return (
+    <button
+      type="button"
+      className="command-toggle"
+      aria-expanded={open}
+      aria-label={open ? "Befehls-Panel schließen (Strg+B)" : "Befehls-Panel öffnen (Strg+B)"}
+      title={open ? "Befehls-Panel schließen (Strg+B)" : "Befehls-Panel öffnen (Strg+B)"}
+      onClick={() => useCatalogStore.getState().toggled()}
+    >
+      {open ? "›" : "‹"}
+    </button>
   );
 }
 

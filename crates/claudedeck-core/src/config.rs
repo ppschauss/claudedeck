@@ -9,6 +9,20 @@ pub struct Config {
     pub scan_paths: Vec<String>,
     pub favorites: Vec<String>,
     pub notifications: NotifySettings,
+    /// Vorgaben, mit denen `start_project` neue Sessions startet.
+    pub defaults: SessionDefaults,
+    /// Auswahl des Model-Reglers. Bewusst konfigurierbar statt im Code fest verdrahtet: ein neues
+    /// Modell soll ohne Rebuild wählbar sein. Aliase halten die Liste über Releases hinweg gültig.
+    pub available_models: Vec<String>,
+}
+
+/// Model und Arbeitsstärke für neu gestartete Sessions. `None` heißt „Flag weglassen" — dann
+/// gelten Claude Codes eigene Vorgaben.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(default)]
+pub struct SessionDefaults {
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -43,6 +57,13 @@ impl Default for Config {
             scan_paths: vec!["/mnt/cache/appdata".to_string()],
             favorites: vec![],
             notifications: NotifySettings::default(),
+            defaults: SessionDefaults::default(),
+            available_models: vec![
+                "opus".to_string(),
+                "sonnet".to_string(),
+                "haiku".to_string(),
+                "fable".to_string(),
+            ],
         }
     }
 }
@@ -110,6 +131,33 @@ mod tests {
         assert_eq!(cfg.favorites, vec![] as Vec<String>);
         assert!(cfg.notifications.enabled);
         assert_eq!(cfg.notifications.silence_ms, 2000);
+        assert_eq!(cfg.defaults.model, None);
+        assert_eq!(cfg.defaults.effort, None);
+    }
+
+    /// Aliase statt fester Model-IDs: so braucht ein neues Modell keine Code-Änderung.
+    #[test]
+    fn available_models_sind_per_default_die_aliase() {
+        let cfg = Config::default();
+        assert_eq!(cfg.available_models, vec!["opus", "sonnet", "haiku", "fable"]);
+    }
+
+    /// Eine vor M7 geschriebene config.json darf nicht auf Defaults zurückfallen.
+    #[test]
+    fn alte_config_ohne_defaults_bleibt_lesbar() {
+        let tmpdir = TempDir::new().unwrap();
+        let config_file = tmpdir.path().join("config.json");
+        fs::write(
+            &config_file,
+            r#"{"profile":{"host":"isekai.local"},"scan_paths":["/mnt/x"]}"#,
+        )
+        .unwrap();
+
+        let cfg = load_from(&config_file);
+
+        assert_eq!(cfg.scan_paths, vec!["/mnt/x".to_string()]);
+        assert_eq!(cfg.defaults.model, None);
+        assert_eq!(cfg.available_models, vec!["opus", "sonnet", "haiku", "fable"]);
     }
 
     #[test]
@@ -131,6 +179,11 @@ mod tests {
                 enabled: false,
                 silence_ms: 5000,
             },
+            defaults: SessionDefaults {
+                model: Some("opus".to_string()),
+                effort: Some("xhigh".to_string()),
+            },
+            available_models: vec!["opus".to_string(), "fable".to_string()],
         };
 
         save_to(&config_file, &original).unwrap();
