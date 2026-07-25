@@ -1,6 +1,22 @@
 /* Einziges Stylesheet für die eigentliche App-UI (Global Constraint: "ein CSS-File, keine
  * Lib") — Sidebar, TerminalHost, StatusBar, Connect-Flow, Dialoge. Globale Basiswerte
- * (Farbvariablen, Reset) sitzen in index.css. */
+ * (Farbvariablen, Reset) sitzen in index.css.
+ *
+ * ## Wer darf scrollen
+ *
+ * GENAU DREI Stellen, sonst nichts:
+ *   1. `.sidebar`        — die Sessionliste
+ *   2. `.command-panel`  — der Befehlskatalog
+ *   3. xterms eigener Viewport innerhalb von `.terminal-host`
+ *
+ * Alles dazwischen ist `overflow: hidden`, und das Dokument selbst ebenfalls (index.css).
+ * Grund: ein einziges scrollfähiges Elternelement genügt, damit beim Überlaufen die gesamte
+ * Oberfläche verrutscht statt nur der betroffenen Liste. Wer hier ein `overflow: auto`
+ * ergänzt, hebelt das aus — dann bitte stattdessen prüfen, warum der Inhalt überläuft.
+ *
+ * Flex-Ketten brauchen dafür durchgängig `min-height: 0` bzw. `min-width: 0`: ein Flex-Item
+ * hat per Vorgabe `min-height: auto` und kann damit größer werden als sein Container, statt zu
+ * schrumpfen. Genau das zog xterms Inhalt vorher über die Fensterhöhe hinaus. */
 
 .app-root {
   display: flex;
@@ -13,6 +29,8 @@
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -22,9 +40,14 @@
 .sidebar {
   width: 240px;
   flex: 0 0 240px;
+  min-width: 0;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   overflow-y: auto;
+  /* Zwingend zusätzlich zu `overflow-y`: sobald eine Achse `auto` ist, rechnet CSS die andere
+     von `visible` ebenfalls auf `auto` hoch — ein langer Sessionname erzeugte so eine
+     horizontale Scrollbar quer durch die Sidebar. */
+  overflow-x: hidden;
   padding: 12px 0;
 }
 
@@ -92,10 +115,44 @@
   gap: 2px;
 }
 
+/* Jede Zeile ist ein Flex-Container — auch die ohne ⋮-Menü.
+ *
+ * Das ist nicht kosmetisch: ein `<button>` sizt als eigenständige Box auf seine Inhaltsbreite,
+ * womit `.session-item`s `flex: 1 1 auto; min-width: 0` wirkungslos bliebe und ein langer
+ * Sessionname die Zeile aufschöbe, statt mit Auslassungspunkten zu kürzen. Erst als Flex-Item
+ * greift die Schrumpfregel — und beide Zeilentypen verhalten sich gleich. */
+.sidebar-group li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
 .sidebar-empty {
   color: var(--text-dim);
   padding: 0 4px;
   font-size: 13px;
+}
+
+/* Ein Leerzustand, der erklärt, statt nur „–" zu zeigen. */
+.sidebar-empty-all {
+  padding: 8px 16px;
+  line-height: 1.5;
+}
+
+/* Einheitlicher Fokusring für alles Bedienbare — in einem Terminal-Werkzeug wird viel mit der
+   Tastatur navigiert, und bisher hatten nur die Suchfelder einen sichtbaren Fokus. */
+.session-item:focus-visible,
+.session-menu-trigger:focus-visible,
+.command-item:focus-visible,
+.command-group-head:focus-visible,
+.command-toggle:focus-visible,
+.settings-tab:focus-visible,
+.profile-pick:focus-visible,
+.status-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  opacity: 1;
 }
 
 .session-row {
@@ -120,6 +177,11 @@
   color: var(--text);
 }
 
+/* Das ⋮ erscheint erst bei Hover oder Tastaturfokus — ein Menüpunkt in jeder Zeile ist Rauschen,
+   solange man ihn nicht braucht.
+   Ausgeblendet wird über `opacity`, NICHT über `display: none`: sonst wäre der Knopf nicht mehr
+   fokussierbar und per Tastatur unerreichbar. `:focus-within` holt ihn zurück, sobald der Fokus
+   irgendwo in der Zeile landet. */
 .session-menu-trigger {
   flex: none;
   background: transparent;
@@ -130,6 +192,19 @@
   padding: 4px 6px;
   font-size: 14px;
   line-height: 1;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.session-row:hover .session-menu-trigger,
+.session-row:focus-within .session-menu-trigger {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-menu-trigger {
+    transition: none;
+  }
 }
 
 .session-menu-trigger:hover {
@@ -186,18 +261,57 @@
   color: var(--text-dim);
   width: 1em;
   flex: none;
+  text-align: center;
+  font-size: 12px;
+  /* Nicht `1`: der Haken ragt sonst 3px über seine Zeilenbox hinaus. */
+  line-height: 1.3;
 }
 
-.session-item .dot-filled {
+/* Statuszustände einer angehängten Session (siehe `activityState` in badges.ts).
+   Nur „arbeitet" bewegt sich — Bewegung heißt hier „da passiert gerade etwas" und ist damit
+   Information, keine Zierde. */
+.session-item .dot-idle {
+  color: var(--text-dim);
+}
+
+.session-item .dot-working {
   color: var(--accent);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* Der Haken ist der Kern der Anzeige: „fertig, wartet auf dich". */
+.session-item .dot-waiting {
+  color: var(--ok);
 }
 
 .session-item .dot-lost {
   color: var(--warn);
 }
 
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Ein dauerhaft pulsender Punkt ist genau die Art Bewegung, die bei Bewegungsempfindlichkeit
+   stört — der Zustand bleibt über Farbe und Vorlesetext trotzdem vollständig erkennbar. */
+@media (prefers-reduced-motion: reduce) {
+  .session-item .dot-working {
+    animation: none;
+  }
+}
+
 .session-name {
   flex: 1 1 auto;
+  /* Das eigentliche Stück für die Ellipse: ein Flex-Item schrumpft per Vorgabe nicht unter
+     seine Mindestinhaltsbreite — bei einem langen Namen ohne Trennstelle
+     ("cc-nieder-mooser-konzertsommer") also gar nicht, und `text-overflow` greift nie. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -229,8 +343,12 @@
 .terminal-area {
   flex: 1 1 auto;
   min-width: 0;
+  /* Ohne `min-height: 0` zieht xterms Inhalt die Flex-Zeile über die Fensterhöhe auf — die
+     Hauptursache der Scrollbalken vor M8. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .terminal-host {
@@ -238,6 +356,9 @@
   min-height: 0;
   position: relative;
   background: #0d0e12;
+  /* Scrollen übernimmt xterms eigener Viewport darin; alles, was darüber hinausragt, wird hier
+     geklippt statt an den Elternbereich weitergereicht. */
+  overflow: hidden;
 }
 
 .terminal-empty-hint {
@@ -767,4 +888,266 @@
   gap: 6px;
   padding: 4px 6px;
   font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------------------
+   Einstellungen-Dialog
+   --------------------------------------------------------------------------------------- */
+
+.status-settings {
+  flex: none;
+  margin-left: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.status-settings:hover {
+  color: var(--text-h);
+  background: var(--bg-input);
+}
+
+.settings-dialog {
+  width: 460px;
+  max-height: min(560px, calc(100vh - 64px));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-tab {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
+.settings-tab:hover {
+  color: var(--text-h);
+}
+
+.settings-tab.active {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.settings-close {
+  flex: none;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+/* Einziger scrollbarer Bereich des Dialogs — der Dialog selbst bleibt an Ort und Stelle. */
+.settings-body {
+  overflow-y: auto;
+  padding: 14px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings-field select,
+.settings-field input[type="number"],
+.settings-field textarea {
+  background: var(--bg-input);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.settings-field textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.settings-field input[type="range"] {
+  accent-color: var(--accent);
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+/* Profile im Einstellungen-Dialog */
+.profile-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.profile-row.active {
+  border-color: var(--accent);
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+}
+
+.profile-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.profile-pick:hover {
+  background: var(--bg-input);
+}
+
+.profile-name {
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.profile-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.profile-edit input,
+.profile-edit select {
+  background: var(--bg-input);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.profile-pair {
+  display: flex;
+  gap: 10px;
+}
+
+.profile-pair > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.profile-actions button {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.profile-actions button.danger:not(:disabled) {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.profile-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.profile-add {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.profile-add:hover {
+  color: var(--text-h);
+  border-color: var(--accent);
 }

@@ -1,13 +1,41 @@
 /* Globale Basis: schlicht + dunkel, kein Theme-System (YAGNI laut Plan) — eine feste
  * Farbpalette statt hell/dunkel-Umschaltung. Komponenten-spezifische Regeln (Sidebar,
  * TerminalHost, StatusBar, Dialoge, ConnectGate) leben gesammelt in App.css. */
+/* JetBrains Mono wird mitgeliefert statt von einem CDN geladen — Tauris Content-Security-Policy
+ * blockiert Fremdhosts, und eine Desktop-App soll beim Start ohnehin nicht ins Netz greifen.
+ * Lizenz: SIL Open Font License 1.1, siehe src/assets/fonts/OFL.txt.
+ * `font-display: block` statt `swap`: ein Terminal, das erst in Consolas erscheint und dann die
+ * Breite wechselt, würde beim Start sichtbar umbrechen. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./assets/fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./assets/fonts/jetbrains-mono-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #16171d;
   --bg-panel: #1b1c23;
   --bg-input: #21222a;
   --text: #c7c9d1;
   --text-h: #f3f4f6;
-  --text-dim: #7c7f8c;
+  /* Sekundärtext (Gruppentitel, Beschreibungen, Statuszeile, Platzhalter).
+   *
+   * War #7c7f8c und erreichte damit nur 4,26:1 auf --bg-panel — unter den 4,5:1, die normaler
+   * Fließtext braucht. #8b8e9b bringt 5,20:1 auf --bg-panel und 5,55:1 auf --bg. */
+  --text-dim: #8b8e9b;
+  /* Für rein dekorative Zwecke (Trenner, deaktivierte Glyphen), wo kein Text gelesen werden
+   * muss — bewusst getrennt, damit die Aufhellung oben nicht überall gleich mitwandert. */
+  --text-faint: #6b6e7a;
   --border: #2e303a;
   --accent: #c084fc;
   --accent-bg: rgba(192, 132, 252, 0.16);
@@ -36,15 +64,26 @@
   box-sizing: border-box;
 }
 
+/* Die App ist ein Fenster, keine Seite: das Dokument selbst darf nie scrollen.
+ *
+ * `overflow: hidden` ist hier der eigentliche Fix — ohne das landet jedes Überlaufen aus einem
+ * beliebigen Pane auf dem Dokument und verschiebt die gesamte Oberfläche. Welche Elemente
+ * stattdessen scrollen dürfen, steht gesammelt im Kopf von App.css.
+ *
+ * `height: 100%` statt `100vh`: im WebView2 weicht die Viewport-Einheit von der tatsächlichen
+ * Client-Höhe ab, sobald Fensterrahmen oder eine Scrollbar hinzukommen — dann ist die Shell ein
+ * paar Pixel zu hoch und erzeugt genau die Scrollbar, die sie vermeiden soll. */
 html,
 body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 #root {
   width: 100%;
-  height: 100vh;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
