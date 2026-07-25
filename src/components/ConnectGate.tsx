@@ -13,7 +13,16 @@
  */
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { describeApiError, isApiError } from "../lib/apiError";
-import { acceptHostkeyAndConnect, connect, hasSecret, saveSecret } from "../lib/ipc";
+import {
+  acceptHostkeyAndConnect,
+  connect,
+  getConfig,
+  hasSecret,
+  saveSecret,
+  setConfig,
+  type Config,
+} from "../lib/ipc";
+import { useConfigStore } from "../stores/configStore";
 import { HostKeyDialog } from "./dialogs/HostKeyDialog";
 
 type Phase = "checking" | "form" | "hostkeyUnknown" | "hostkeyChanged";
@@ -34,6 +43,7 @@ export function ConnectGate({ onConnected }: ConnectGateProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hostkeyInfo, setHostkeyInfo] = useState<HostkeyInfo | null>(null);
+  const [config, setLocalConfig] = useState<Config | null>(null);
   // Passwort des zuletzt versuchten connect() — accept_hostkey_and_connect() braucht denselben
   // Wert (oder `undefined` für den Keyring-Pfad), sonst würde der Nutzer es nach dem
   // Hostkey-Dialog nochmal eintippen müssen.
@@ -42,9 +52,19 @@ export function ConnectGate({ onConnected }: ConnectGateProps) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // Config zuerst: sie liefert die Profilauswahl und entscheidet über den Auto-Connect.
+      const cfg = await getConfig().catch(() => null);
+      if (cancelled) return;
+      if (cfg) {
+        setLocalConfig(cfg);
+        useConfigStore.getState().loaded(cfg);
+      }
+
       const has = await hasSecret("password").catch(() => false);
       if (cancelled) return;
-      if (has) {
+      // Nur automatisch verbinden, wenn es gewünscht ist UND ein Passwort hinterlegt ist —
+      // sonst landet der Nutzer im Formular statt in einem aussichtslosen Verbindungsversuch.
+      if (has && (cfg?.auto_connect ?? true)) {
         await attemptConnect(undefined);
       } else {
         setPhase("form");
@@ -56,6 +76,25 @@ export function ConnectGate({ onConnected }: ConnectGateProps) {
     // Nur beim ersten Mount prüfen — kein Re-Check bei State-Änderungen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Profilwechsel: erst speichern, dann prüfen, ob für das neue Ziel schon ein Passwort
+   * hinterlegt ist. Das Speichern muss vor dem Verbinden passieren, weil das Backend das aktive
+   * Profil aus der Config liest — nicht aus einem Parameter.
+   */
+  async function handleProfileChange(id: string) {
+    if (!config) return;
+    const next = { ...config, active_profile: id };
+    setLocalConfig(next);
+    useConfigStore.getState().loaded(next);
+    setPassword("");
+    setError(null);
+    try {
+      await setConfig(next);
+    } catch (err) {
+      setError(describeApiError(err));
+    }
+  }
 
   async function attemptConnect(pw: string | undefined) {
     setBusy(true);
@@ -168,6 +207,25 @@ export function ConnectGate({ onConnected }: ConnectGateProps) {
     <div className="connect-gate">
       <form className="connect-form" onSubmit={(e) => void handleSubmit(e)}>
         <h1>ClaudeDeck</h1>
+
+        {config && config.profiles.length > 0 && (
+          <label>
+            Verbindung
+            <select
+              value={config.active_profile ?? config.profiles[0].id}
+              disabled={busy}
+              onChange={(e) => void handleProfileChange(e.target.value)}
+            >
+              {config.profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.user}@{p.host}
+                  {p.port === 22 ? "" : `:${p.port}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label>
           Passwort
           <input

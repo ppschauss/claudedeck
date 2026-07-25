@@ -20,6 +20,7 @@ pub fn run() {
             commands::set_config,
             commands::save_secret,
             commands::has_secret,
+            commands::delete_secret,
             commands::list_sessions,
             commands::open_session,
             commands::start_project,

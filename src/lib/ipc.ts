@@ -55,6 +55,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { TerminalDisplay } from "./terminalTheme";
 
 // ---------------------------------------------------------------------------------------------
 // Base64 (Uint8Array ↔ Standard-Base64 mit Padding, kompatibel zu Rusts `data-encoding::BASE64`)
@@ -120,14 +121,38 @@ export interface SessionDefaults {
   effort: string | null;
 }
 
+/**
+ * `claudedeck_core::config::NamedProfile` — ein benanntes Verbindungsziel.
+ *
+ * `id` ist der Schlüssel, unter dem Passwort und Passphrase im Anmeldedaten-Speicher liegen,
+ * und darf sich deshalb nie ändern — `name` schon.
+ */
+export interface NamedProfile {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  auth: AuthMethod;
+  key_path: string | null;
+}
+
 /** `claudedeck_core::config::Config` — kein `rename_all`. */
 export interface Config {
+  /** Veraltet: Migrationsquelle für `profiles`. Nicht mehr zum Verbinden benutzt. */
   profile: Profile;
+  /** Nie leer — das Backend migriert beim Laden. */
+  profiles: NamedProfile[];
+  active_profile: string | null;
+  auto_connect: boolean;
   scan_paths: string[];
   favorites: string[];
   notifications: NotifySettings;
   defaults: SessionDefaults;
   available_models: string[];
+  /** `TerminalSettings` — die EINZIGE Teilstruktur mit `rename_all = "camelCase"`, damit sie
+   * ohne Umbenennung als `TerminalDisplay` (terminalTheme.ts) durchgereicht werden kann. */
+  terminal: TerminalDisplay;
 }
 
 /** `save_secret`/`has_secret`-Argument — `SecretArgKind` hat `rename_all = "camelCase"`. */
@@ -239,12 +264,21 @@ export function setConfig(config: Config): Promise<void> {
   return invoke("set_config", { config });
 }
 
-export function saveSecret(kind: SecretKind, value: string): Promise<void> {
-  return invoke("save_secret", { kind, value });
+/** `profileId` weglassen heißt „aktives Profil" — jedes Profil hat sein eigenes Secret. */
+export function saveSecret(
+  kind: SecretKind,
+  value: string,
+  profileId?: string,
+): Promise<void> {
+  return invoke("save_secret", { kind, value, profileId: profileId ?? null });
 }
 
-export function hasSecret(kind: SecretKind): Promise<boolean> {
-  return invoke("has_secret", { kind });
+export function hasSecret(kind: SecretKind, profileId?: string): Promise<boolean> {
+  return invoke("has_secret", { kind, profileId: profileId ?? null });
+}
+
+export function deleteSecret(kind: SecretKind, profileId?: string): Promise<void> {
+  return invoke("delete_secret", { kind, profileId: profileId ?? null });
 }
 
 export function listSessions(): Promise<SessionList> {

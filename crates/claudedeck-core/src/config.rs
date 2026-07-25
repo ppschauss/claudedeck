@@ -14,6 +14,92 @@ pub struct Config {
     /// Auswahl des Model-Reglers. Bewusst konfigurierbar statt im Code fest verdrahtet: ein neues
     /// Modell soll ohne Rebuild wählbar sein. Aliase halten die Liste über Releases hinweg gültig.
     pub available_models: Vec<String>,
+    /// Aussehen des Terminals.
+    pub terminal: TerminalSettings,
+    /// Alle hinterlegten Verbindungsziele. Nach [`migrate_profiles`] nie leer.
+    pub profiles: Vec<NamedProfile>,
+    /// ID des gewählten Profils; zeigt sie ins Leere, greift [`Config::active`] auf das erste zu.
+    pub active_profile: Option<String>,
+    /// Beim Start automatisch verbinden, sofern ein Passwort hinterlegt ist.
+    pub auto_connect: bool,
+}
+
+/// Ein benanntes Verbindungsziel.
+///
+/// `id` ist **nicht** kosmetisch: sie ist der Schlüssel, unter dem Passwort und Key-Passphrase
+/// im Keyring liegen ([`crate::secrets::SecretStore`] nimmt ihn seit jeher als ersten
+/// Parameter entgegen). Sie darf sich deshalb nie ändern — der sichtbare `name` schon.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct NamedProfile {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth: AuthMethod,
+    pub key_path: Option<String>,
+}
+
+impl Default for NamedProfile {
+    fn default() -> Self {
+        let p = Profile::default();
+        NamedProfile {
+            id: LEGACY_PROFILE_ID.to_string(),
+            name: format!("{}@{}", p.user, p.host),
+            host: p.host,
+            port: p.port,
+            user: p.user,
+            auth: p.auth,
+            key_path: p.key_path,
+        }
+    }
+}
+
+/// Die ID, unter der vor der Profil-Unterstützung sämtliche Secrets abgelegt wurden. Das
+/// migrierte Altprofil MUSS sie behalten, sonst findet die App ein bereits gespeichertes
+/// Passwort nicht mehr wieder.
+pub const LEGACY_PROFILE_ID: &str = "default";
+
+impl Config {
+    /// Das gewählte Profil — oder das erste, falls `active_profile` ins Leere zeigt (gelöschtes
+    /// oder vertipptes Profil darf die App nicht ohne Verbindungsziel zurücklassen).
+    ///
+    /// Setzt voraus, dass `profiles` nicht leer ist; dafür sorgt [`migrate_profiles`], das
+    /// [`load_from`] immer anwendet.
+    pub fn active(&self) -> &NamedProfile {
+        self.active_profile
+            .as_deref()
+            .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+            .or_else(|| self.profiles.first())
+            .expect("profiles ist nach migrate_profiles nie leer")
+    }
+}
+
+/// Sorgt dafür, dass mindestens ein Profil existiert.
+///
+/// Ist `profiles` leer (config.json von vor M8 oder frisch angelegt), entsteht eines aus dem
+/// alten `profile`-Feld — mit [`LEGACY_PROFILE_ID`] als ID, damit vorhandene Keyring-Einträge
+/// weiter passen. Vorhandene Profile bleiben unangetastet.
+pub fn migrate_profiles(mut config: Config) -> Config {
+    if config.profiles.is_empty() {
+        let p = &config.profile;
+        config.profiles = vec![NamedProfile {
+            id: LEGACY_PROFILE_ID.to_string(),
+            name: format!("{}@{}", p.user, p.host),
+            host: p.host.clone(),
+            port: p.port,
+            user: p.user.clone(),
+            auth: p.auth.clone(),
+            key_path: p.key_path.clone(),
+        }];
+    }
+
+    if config.active_profile.is_none() {
+        config.active_profile = Some(config.profiles[0].id.clone());
+    }
+
+    config
 }
 
 /// Model und Arbeitsstärke für neu gestartete Sessions. `None` heißt „Flag weglassen" — dann
@@ -23,6 +109,45 @@ pub struct Config {
 pub struct SessionDefaults {
     pub model: Option<String>,
     pub effort: Option<String>,
+}
+
+/// Aussehen des Terminals.
+///
+/// Einzige Struktur in dieser Datei mit `rename_all = "camelCase"`: die Felder gehen 1:1 an
+/// `TerminalDisplay` in `src/lib/terminalTheme.ts` und werden dort direkt an xterm gereicht.
+/// Gleiche Schreibweise auf beiden Seiten spart eine Übersetzungsschicht, die nur eine weitere
+/// Stelle zum Auseinanderlaufen wäre.
+///
+/// Die Werte werden hier **nicht** validiert — das erledigt das Frontend beim Anwenden
+/// (`themeById` fängt eine unbekannte Schema-ID ab, `clampFontSize` eine unsinnige Größe).
+/// So bleibt eine von Hand editierte `config.json` immer ladbar.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TerminalSettings {
+    pub theme_id: String,
+    pub font_family: String,
+    pub font_size: u16,
+    pub line_height: f32,
+    pub letter_spacing: f32,
+    pub cursor_style: String,
+    pub cursor_blink: bool,
+    pub scrollback: u32,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        // Spiegelt DEFAULT_DISPLAY in src/lib/terminalTheme.ts.
+        TerminalSettings {
+            theme_id: "claudedeck-dark".to_string(),
+            font_family: "\"JetBrains Mono\", Consolas, monospace".to_string(),
+            font_size: 14,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            cursor_style: "bar".to_string(),
+            cursor_blink: true,
+            scrollback: 10000,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -58,6 +183,12 @@ impl Default for Config {
             favorites: vec![],
             notifications: NotifySettings::default(),
             defaults: SessionDefaults::default(),
+            terminal: TerminalSettings::default(),
+            // Bleibt leer — `migrate_profiles` füllt es aus `profile`, damit es genau einen Weg
+            // gibt, wie ein Profil entsteht.
+            profiles: vec![],
+            active_profile: None,
+            auto_connect: true,
             available_models: vec![
                 "opus".to_string(),
                 "sonnet".to_string(),
@@ -95,11 +226,15 @@ pub fn config_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.config/claudedeck/config.json"))
 }
 
+/// Lädt die Config und migriert sie in einem Zug — so kann kein Aufrufer eine Config ohne
+/// Profil in die Hand bekommen.
 pub fn load_from(path: &Path) -> Config {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    migrate_profiles(
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
+    )
 }
 
 pub fn save_to(path: &Path, cfg: &Config) -> std::io::Result<()> {
@@ -164,6 +299,21 @@ mod tests {
             cfg.available_models,
             vec!["opus", "sonnet", "haiku", "fable"]
         );
+        // Auch die Terminal-Einstellungen müssen ohne Eintrag sinnvoll dastehen.
+        assert_eq!(cfg.terminal, TerminalSettings::default());
+        assert_eq!(cfg.terminal.theme_id, "claudedeck-dark");
+    }
+
+    /// Die Terminal-Felder gehen 1:1 ans Frontend — die Schreibweise muss camelCase sein, sonst
+    /// findet `TerminalDisplay` sie nicht und alles fällt still auf Vorgaben zurück.
+    #[test]
+    fn terminal_settings_serialisieren_camel_case() {
+        let json = serde_json::to_string(&TerminalSettings::default()).unwrap();
+        assert!(json.contains("\"themeId\""), "{json}");
+        assert!(json.contains("\"fontFamily\""), "{json}");
+        assert!(json.contains("\"fontSize\""), "{json}");
+        assert!(json.contains("\"cursorBlink\""), "{json}");
+        assert!(!json.contains("theme_id"), "{json}");
     }
 
     #[test]
@@ -190,6 +340,19 @@ mod tests {
                 effort: Some("xhigh".to_string()),
             },
             available_models: vec!["opus".to_string(), "fable".to_string()],
+            terminal: TerminalSettings {
+                theme_id: "nord".to_string(),
+                font_family: "Consolas, monospace".to_string(),
+                font_size: 16,
+                line_height: 1.4,
+                letter_spacing: 0.5,
+                cursor_style: "block".to_string(),
+                cursor_blink: false,
+                scrollback: 5000,
+            },
+            profiles: vec![NamedProfile::default()],
+            active_profile: Some("default".to_string()),
+            auto_connect: false,
         };
 
         save_to(&config_file, &original).unwrap();
@@ -225,6 +388,114 @@ mod tests {
         assert_eq!(cfg.notifications.silence_ms, 2000);
     }
 
+    // --- Verbindungsprofile -----------------------------------------------------------------
+
+    /// Eine config.json aus der Zeit vor den Profilen muss weiterlaufen — und zwar mit der ID
+    /// `default`, weil genau darunter das Passwort bereits im Keyring liegt. Eine andere ID
+    /// würde ein gespeichertes Passwort unauffindbar machen.
+    #[test]
+    fn migration_macht_aus_dem_altprofil_das_profil_default() {
+        let cfg = migrate_profiles(Config {
+            profile: Profile {
+                host: "isekai.local".to_string(),
+                port: 2222,
+                user: "root".to_string(),
+                auth: AuthMethod::Password,
+                key_path: None,
+            },
+            ..Config::default()
+        });
+
+        assert_eq!(cfg.profiles.len(), 1);
+        assert_eq!(cfg.profiles[0].id, "default");
+        assert_eq!(cfg.profiles[0].host, "isekai.local");
+        assert_eq!(cfg.profiles[0].port, 2222);
+        assert_eq!(cfg.profiles[0].user, "root");
+        assert_eq!(cfg.active_profile.as_deref(), Some("default"));
+    }
+
+    /// Der sichtbare Name soll ohne Zutun brauchbar sein, nicht „default" heißen.
+    #[test]
+    fn migration_benennt_das_altprofil_nach_benutzer_und_host() {
+        let cfg = migrate_profiles(Config::default());
+        assert_eq!(cfg.profiles[0].name, "root@isekai.local");
+    }
+
+    #[test]
+    fn migration_laesst_vorhandene_profile_unangetastet() {
+        let existing = NamedProfile {
+            id: "vps".to_string(),
+            name: "VPS".to_string(),
+            host: "vps.example".to_string(),
+            port: 22,
+            user: "deploy".to_string(),
+            auth: AuthMethod::Key,
+            key_path: Some("/root/.ssh/id_ed25519".to_string()),
+        };
+        let cfg = migrate_profiles(Config {
+            profiles: vec![existing.clone()],
+            active_profile: Some("vps".to_string()),
+            ..Config::default()
+        });
+
+        assert_eq!(cfg.profiles, vec![existing]);
+        assert_eq!(cfg.active_profile.as_deref(), Some("vps"));
+    }
+
+    /// Zeigt `active_profile` ins Leere (Profil gelöscht, ID vertippt), darf die App nicht ohne
+    /// Verbindungsziel dastehen.
+    #[test]
+    fn active_faellt_bei_unbekannter_id_auf_das_erste_profil_zurueck() {
+        let cfg = migrate_profiles(Config {
+            active_profile: Some("gibts-nicht".to_string()),
+            ..Config::default()
+        });
+        assert_eq!(cfg.active().id, "default");
+    }
+
+    #[test]
+    fn active_findet_das_gewaehlte_profil() {
+        let mut cfg = migrate_profiles(Config::default());
+        cfg.profiles.push(NamedProfile {
+            id: "zweit".to_string(),
+            name: "Zweiter".to_string(),
+            host: "b.example".to_string(),
+            port: 22,
+            user: "u".to_string(),
+            auth: AuthMethod::Password,
+            key_path: None,
+        });
+        cfg.active_profile = Some("zweit".to_string());
+
+        assert_eq!(cfg.active().host, "b.example");
+    }
+
+    /// `load_from` migriert selbst — sonst müsste jeder Aufrufer daran denken.
+    #[test]
+    fn load_from_liefert_immer_mindestens_ein_profil() {
+        let tmpdir = TempDir::new().unwrap();
+        let config_file = tmpdir.path().join("config.json");
+        fs::write(&config_file, r#"{"profile":{"host":"alt.example"}}"#).unwrap();
+
+        let cfg = load_from(&config_file);
+
+        assert_eq!(cfg.profiles.len(), 1);
+        assert_eq!(cfg.profiles[0].host, "alt.example");
+        assert_eq!(cfg.active().host, "alt.example");
+    }
+
+    #[test]
+    fn load_from_nonexistent_liefert_ebenfalls_ein_profil() {
+        let cfg = load_from(&PathBuf::from("/nicht/vorhanden/config.json"));
+        assert_eq!(cfg.profiles.len(), 1);
+        assert_eq!(cfg.active().id, "default");
+    }
+
+    #[test]
+    fn auto_connect_ist_per_default_an() {
+        assert!(Config::default().auto_connect);
+    }
+
     #[test]
     fn corrupted_json_returns_default() {
         let tmpdir = TempDir::new().unwrap();
@@ -236,7 +507,8 @@ mod tests {
 
         let cfg = load_from(&config_file);
 
-        // Should return complete default, not panic
-        assert_eq!(cfg, Config::default());
+        // Vollständige Defaults statt Panik — inklusive Migration, weil `load_from` sie immer
+        // anwendet und niemand eine Config ohne Profil in die Hand bekommen soll.
+        assert_eq!(cfg, migrate_profiles(Config::default()));
     }
 }

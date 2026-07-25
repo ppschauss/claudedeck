@@ -5,17 +5,22 @@ import { ConnectGate } from "./components/ConnectGate";
 import { NotificationManager } from "./components/NotificationManager";
 import { ReconnectOverlay } from "./components/ReconnectOverlay";
 import { Sidebar } from "./components/Sidebar";
+import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { StatusBar } from "./components/StatusBar";
 import { TerminalHost } from "./components/TerminalHost";
 import { ToastHost } from "./components/Toast";
-import { getConfig, onConnectionState, onSessionReattached } from "./lib/ipc";
+import { getConfig, setConfig, onConnectionState, onSessionReattached } from "./lib/ipc";
+import { applyDisplay } from "./lib/termPool";
+import { clampFontSize, themeById, type TerminalDisplay } from "./lib/terminalTheme";
 import { useCatalogStore } from "./stores/catalogStore";
+import { useConfigStore } from "./stores/configStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 
 function App() {
   const [connected, setConnected] = useState(false);
   const [host, setHost] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Über die gesamte App-Lebensdauer aktiv (auch schon während ConnectGate) — sonst würde der
   // erste "connecting"/"connected"-Übergang verpasst, weil der Listener erst nach dem
@@ -67,9 +72,13 @@ function App() {
   // Terminal-Suche: AltGr meldet sich unter Windows als Strg+Alt.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "b") {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         useCatalogStore.getState().toggled();
+      } else if (e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen((open) => !open);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -79,9 +88,48 @@ function App() {
   useEffect(() => {
     if (!connected) return;
     void getConfig()
-      .then((config) => setHost(`${config.profile.user}@${config.profile.host}`))
+      .then((config) => {
+        setHost(`${config.profile.user}@${config.profile.host}`);
+        useConfigStore.getState().loaded(config);
+      })
       .catch(() => setHost(""));
   }, [connected]);
+
+  // Darstellung anwenden, sobald sie sich ändert — beim Laden ebenso wie nach jeder Änderung im
+  // Einstellungen-Dialog oder per Zoom.
+  const terminal = useConfigStore((s) => s.config?.terminal);
+  useEffect(() => {
+    if (!terminal) return;
+    applyTerminalDisplay(terminal);
+  }, [terminal]);
+
+  // Strg + / Strg − / Strg 0 — die mit Abstand häufigste Einstellung, deshalb auf der Tastatur.
+  // `!e.altKey` wie bei den übrigen Kürzeln: AltGr meldet sich unter Windows als Strg+Alt.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const current = useConfigStore.getState().config;
+      if (!current) return;
+
+      let size: number | null = null;
+      if (e.key === "+" || e.key === "=") size = current.terminal.fontSize + 1;
+      else if (e.key === "-") size = current.terminal.fontSize - 1;
+      else if (e.key === "0") size = 14;
+      if (size === null) return;
+
+      e.preventDefault();
+      const fontSize = clampFontSize(size);
+      if (fontSize === current.terminal.fontSize) return;
+
+      const next = { ...current, terminal: { ...current.terminal, fontSize } };
+      useConfigStore.getState().loaded(next);
+      // Fehler beim Speichern darf den Zoom nicht blockieren — die Größe wirkt sofort, sie
+      // überlebt dann nur den Neustart nicht.
+      void setConfig(next).catch(() => undefined);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   if (!connected) {
     return (
@@ -101,11 +149,28 @@ function App() {
         <CommandPanelToggle />
         <CommandPanel />
       </div>
-      <StatusBar host={host} />
+      <StatusBar host={host} onOpenSettings={() => setSettingsOpen(true)} />
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       <NotificationManager />
       <ToastHost />
     </div>
   );
+}
+
+/**
+ * Wendet die Terminal-Darstellung an — auf die Terminals *und* auf die App.
+ *
+ * Der zweite Teil ist der Grund, warum ein Themenwechsel sich nicht nach „nur das Terminal ist
+ * jetzt blau" anfühlt: Sidebar-Auswahl, Badges und Fokusringe hängen bereits an den
+ * CSS-Variablen `--accent`/`--accent-bg`, also genügt es, die zu überschreiben. Keine Komponente
+ * muss dafür etwas über Themes wissen.
+ */
+function applyTerminalDisplay(display: TerminalDisplay): void {
+  applyDisplay(display);
+  const theme = themeById(display.themeId);
+  const root = document.documentElement;
+  root.style.setProperty("--accent", theme.accent);
+  root.style.setProperty("--accent-bg", theme.accentBg);
 }
 
 /** Schmale Leiste zwischen Terminal und Panel — der einzige immer sichtbare Weg zum Panel. */

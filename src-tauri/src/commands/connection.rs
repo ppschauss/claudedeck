@@ -30,7 +30,7 @@
 //! durchläuft, statt die gerade erst als `lost` markierten Sessions ein zweites Mal
 //! wegzuräumen.
 
-use claudedeck_core::config::{self, AuthMethod, Config, Profile};
+use claudedeck_core::config::{self, AuthMethod, Config, NamedProfile};
 use claudedeck_core::secrets::{KeyringStore, SecretKind, SecretStore};
 use claudedeck_core::ssh::{Auth, ConnectParams, HostkeyPolicy, SshConnection};
 use serde::{Deserialize, Serialize};
@@ -43,10 +43,19 @@ use crate::error::ApiError;
 use crate::reconnect_supervisor::ReconnectSupervisor;
 use crate::state::{cleanup_sessions_fully, AppState};
 
-/// Bis das Config-Schema mehrere benannte Profile unterstützt (aktuell genau ein
-/// `Config::profile`, siehe `claudedeck_core::config::Config`), ist die Keyring-Ablage an
-/// diesen festen Bezeichner gebunden statt an einen Profilnamen.
-const PROFILE_ID: &str = "default";
+/// Auf welches Profil sich ein Secret-Aufruf bezieht: die übergebene ID, sonst das aktive
+/// Profil aus der Config.
+///
+/// Das Frontend darf die ID weglassen (der Startdialog fragt das Passwort für das gerade
+/// gewählte Profil ab) — dann gilt dasselbe Ziel, mit dem auch `connect` arbeitet.
+fn resolve_profile_id(explicit: Option<String>) -> String {
+    explicit.unwrap_or_else(|| {
+        config::load_from(&config::config_path())
+            .active()
+            .id
+            .clone()
+    })
+}
 
 /// `kind`-Argument von `save_secret`/`has_secret` — spiegelt `SecretKind` aus core, aber als
 /// eigener, `Deserialize`-fähiger Typ mit den camelCase-Literalen aus dem IPC-Contract
@@ -89,11 +98,11 @@ fn known_hosts_path() -> PathBuf {
 /// Key-Auth braucht `key_path` aus der Config, die Passphrase (falls gesetzt) kommt aus dem
 /// Keyring. Liefert `ApiError::AuthFailed`, wenn die nötigen Angaben fehlen (kein Connect-
 /// Versuch ohne verwertbare Auth).
-fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Auth, ApiError> {
+fn build_auth(profile: &NamedProfile, password_override: Option<String>) -> Result<Auth, ApiError> {
     match profile.auth {
         AuthMethod::Password => {
             let password = password_override
-                .or_else(|| KeyringStore.get(PROFILE_ID, SecretKind::Password))
+                .or_else(|| KeyringStore.get(&profile.id, SecretKind::Password))
                 .ok_or_else(|| ApiError::AuthFailed {
                     message: "Kein Passwort hinterlegt".to_string(),
                 })?;
@@ -106,7 +115,7 @@ fn build_auth(profile: &Profile, password_override: Option<String>) -> Result<Au
                 .ok_or_else(|| ApiError::AuthFailed {
                     message: "Kein Key-Pfad konfiguriert".to_string(),
                 })?;
-            let passphrase = KeyringStore.get(PROFILE_ID, SecretKind::KeyPassphrase);
+            let passphrase = KeyringStore.get(&profile.id, SecretKind::KeyPassphrase);
             Ok(Auth::Key {
                 path: PathBuf::from(key_path),
                 passphrase,
@@ -184,7 +193,9 @@ pub(crate) async fn do_connect_core(
     }
 
     let config = config::load_from(&config::config_path());
-    let auth = match build_auth(&config.profile, password) {
+    // Das aktive Profil statt des alten Einzelfelds — `load_from` garantiert, dass eines da ist.
+    let profile = config.active();
+    let auth = match build_auth(profile, password) {
         Ok(auth) => auth,
         Err(err) => {
             if !opportunistic {
@@ -195,9 +206,9 @@ pub(crate) async fn do_connect_core(
     };
 
     let params = ConnectParams {
-        host: config.profile.host.clone(),
-        port: config.profile.port,
-        user: config.profile.user.clone(),
+        host: profile.host.clone(),
+        port: profile.port,
+        user: profile.user.clone(),
         auth,
         known_hosts: known_hosts_path(),
         policy,
@@ -303,14 +314,32 @@ pub fn set_config(config: Config) -> Result<(), ApiError> {
 
 /// Legt `value` (Passwort oder Key-Passphrase) im OS-Keyring ab. `value` wird nie geloggt —
 /// `SecretArgKind` trägt bewusst kein `Debug`, das `value` mitausgeben könnte.
+///
+/// `profile_id` weglassen heißt „das aktive Profil"; jedes Profil hat damit sein eigenes
+/// Passwort im Anmeldedaten-Speicher.
 #[tauri::command]
-pub fn save_secret(kind: SecretArgKind, value: String) -> Result<(), ApiError> {
+pub fn save_secret(
+    kind: SecretArgKind,
+    value: String,
+    profile_id: Option<String>,
+) -> Result<(), ApiError> {
     KeyringStore
-        .set(PROFILE_ID, kind.into(), &value)
+        .set(&resolve_profile_id(profile_id), kind.into(), &value)
         .map_err(|message| ApiError::Io { message })
 }
 
 #[tauri::command]
-pub fn has_secret(kind: SecretArgKind) -> bool {
-    KeyringStore.get(PROFILE_ID, kind.into()).is_some()
+pub fn has_secret(kind: SecretArgKind, profile_id: Option<String>) -> bool {
+    KeyringStore
+        .get(&resolve_profile_id(profile_id), kind.into())
+        .is_some()
+}
+
+/// Entfernt ein gespeichertes Secret — nötig, damit „Passwort vergessen" im Einstellungen-Dialog
+/// und das Löschen eines Profils keine verwaisten Einträge im Keyring hinterlassen.
+#[tauri::command]
+pub fn delete_secret(kind: SecretArgKind, profile_id: Option<String>) -> Result<(), ApiError> {
+    KeyringStore
+        .delete(&resolve_profile_id(profile_id), kind.into())
+        .map_err(|message| ApiError::Io { message })
 }
