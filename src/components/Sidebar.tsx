@@ -26,7 +26,9 @@ import {
 } from "../lib/ipc";
 import { describeApiError } from "../lib/apiError";
 import { findOpenByName } from "../lib/attachGuard";
+import { activityState, type ActivityState } from "../lib/badges";
 import { debounceTrailing } from "../lib/debounce";
+import { useNow } from "../lib/useNow";
 import { matchesQuery, sortByKey, type SortKey } from "../lib/sessionFilter";
 import { nextActiveSessionId } from "../lib/sessionSwitch";
 import * as termPool from "../lib/termPool";
@@ -104,6 +106,11 @@ export function Sidebar() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+
+  // Der Statuswechsel „arbeitet" → „fertig" entsteht durch Stille, also durch Zeitablauf und
+  // nicht durch ein Ereignis — ohne eigenen Takt bliebe die Anzeige auf „arbeitet" stehen.
+  // Sekundentakt reicht: der Schwellenwert liegt bei zwei Sekunden.
+  const now = useNow(1000, openSessions.size > 0);
 
   const refresh = useCallback(async () => {
     try {
@@ -309,8 +316,15 @@ export function Sidebar() {
         </select>
       </div>
 
-      <SidebarGroup title="Angehängt">
-        {attached.length === 0 && <p className="sidebar-empty">–</p>}
+      {attached.length + notAttached.length + startableView.length === 0 && (
+        <p className="sidebar-empty sidebar-empty-all">
+          {query.trim()
+            ? "Kein Treffer für die Suche."
+            : "Noch nichts da — sobald Projekte gefunden werden, erscheinen sie hier."}
+        </p>
+      )}
+
+      <SidebarGroup title="Angehängt" hidden={attached.length === 0}>
         <ul>
           {attached.map(([sessionId, s]) => (
             <li key={sessionId} className="session-row">
@@ -319,12 +333,7 @@ export function Sidebar() {
                 className={sessionId === activeSessionId ? "session-item active" : "session-item"}
                 onClick={() => handleActivate(sessionId)}
               >
-                <span
-                  className={s.lost ? "dot dot-lost" : "dot dot-filled"}
-                  aria-hidden="true"
-                >
-                  {s.lost ? "⚠" : "●"}
-                </span>
+                <StatusDot state={activityState(s.activity, now, s.lost)} />
                 <span className="session-name">{s.name}</span>
                 {s.activity.badge > 0 && <span className="badge">{s.activity.badge}</span>}
               </button>
@@ -354,8 +363,7 @@ export function Sidebar() {
         </ul>
       </SidebarGroup>
 
-      <SidebarGroup title="Läuft">
-        {notAttached.length === 0 && <p className="sidebar-empty">–</p>}
+      <SidebarGroup title="Läuft" hidden={notAttached.length === 0}>
         <ul>
           {notAttached.map((s) => (
             <li key={s.name}>
@@ -375,8 +383,7 @@ export function Sidebar() {
         </ul>
       </SidebarGroup>
 
-      <SidebarGroup title="Startbar">
-        {startableView.length === 0 && <p className="sidebar-empty">–</p>}
+      <SidebarGroup title="Startbar" hidden={startableView.length === 0}>
         <ul>
           {startableView.map((p) => (
             <li key={p.path}>
@@ -399,7 +406,50 @@ export function Sidebar() {
   );
 }
 
-function SidebarGroup({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * Statusicon einer angehängten Session. Der „fertig"-Haken ist der eigentliche Nutzen: er zeigt
+ * auf einen Blick, welche Session auf eine Antwort wartet, ohne dass man hineinschauen muss.
+ *
+ * Kein `aria-hidden` wie beim alten Punkt — der Zustand ist echte Information, keine Dekoration,
+ * und wird deshalb auch vorgelesen.
+ */
+const STATUS_LABELS: Record<ActivityState, string> = {
+  working: "arbeitet",
+  waiting: "fertig — wartet auf Eingabe",
+  idle: "bereit",
+  lost: "Verbindung verloren",
+};
+
+const STATUS_GLYPHS: Record<ActivityState, string> = {
+  working: "●",
+  waiting: "✓",
+  idle: "●",
+  lost: "⚠",
+};
+
+function StatusDot({ state }: { state: ActivityState }) {
+  return (
+    <span className={`dot dot-${state}`} role="img" aria-label={STATUS_LABELS[state]}>
+      {STATUS_GLYPHS[state]}
+    </span>
+  );
+}
+
+/**
+ * Eine Gruppe verschwindet komplett, wenn sie leer ist — drei Überschriften mit „–" darunter
+ * waren der Hauptgrund, warum die Sidebar voll aussah, ohne etwas zu zeigen. Ist *alles* leer,
+ * übernimmt ein einzelner erklärender Leerzustand weiter oben.
+ */
+function SidebarGroup({
+  title,
+  hidden,
+  children,
+}: {
+  title: string;
+  hidden?: boolean;
+  children: ReactNode;
+}) {
+  if (hidden) return null;
   return (
     <div className="sidebar-group">
       <h3>{title}</h3>

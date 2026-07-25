@@ -27,6 +27,43 @@ export function onOutput(a: Activity, now: number, isActive: boolean): Activity 
 }
 
 /**
+ * Was eine Session gerade tut — für das Statusicon in der Sidebar.
+ *
+ * - `idle`    — noch kein Output; frisch angehängt oder still.
+ * - `working` — der letzte Output ist jünger als der Schwellenwert: da läuft etwas.
+ * - `waiting` — Output kam, danach Ruhe: **fertig, wartet vermutlich auf deine Eingabe.**
+ * - `lost`    — Verbindung weg; kein laufender Prozess, über den sich etwas aussagen ließe.
+ */
+export type ActivityState = "idle" | "working" | "waiting" | "lost";
+
+/**
+ * Leitet den Zustand aus derselben Grundlage ab wie [`shouldNotify`] — Zeit seit dem letzten
+ * Output gegen denselben Schwellenwert. Beides beantwortet dieselbe Frage („wartet die Session
+ * auf mich?"), deshalb teilen sie bewusst die Regel: liefe das Icon anders als die
+ * Benachrichtigung, wäre eines von beidem falsch.
+ *
+ * **Das ist eine Heuristik, kein Signal von Claude Code.** Gemessen wird Stille auf der
+ * Leitung, nicht „fertig". Ein Befehl, der lange rechnet ohne etwas auszugeben (ein großer
+ * Build, ein langer Download), sieht damit aus wie fertig. Für den Alltagsfall — Claude
+ * antwortet und wartet dann auf die nächste Anweisung — trifft es zu, und mehr verspricht das
+ * Icon nicht.
+ *
+ * `lost` schlägt alles: eine Session, die auf Reconnect wartet, ist weder beschäftigt noch
+ * fertig. Ein Zeitsprung rückwärts (`now < lastOutputAt`) ergibt `working`, nicht `waiting` —
+ * negative Differenzen dürfen nicht als „lange her" durchgehen.
+ */
+export function activityState(
+  a: Activity,
+  now: number,
+  lost: boolean,
+  thresholdMs = 2000,
+): ActivityState {
+  if (lost) return "lost";
+  if (a.lastOutputAt === null) return "idle";
+  return now - a.lastOutputAt >= thresholdMs ? "waiting" : "working";
+}
+
+/**
  * Ob jetzt für eine Hintergrund-Session eine Notification geschickt werden soll: nur wenn
  * Notifications aktiviert sind, die Session NICHT gerade `lost` ist (Fix Minor, Review-Fund
  * Task 6 — eine Session, die auf Reconnect wartet, hat keinen laufenden Prozess, der "auf

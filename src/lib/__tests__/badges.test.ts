@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { onOutput, shouldNotify, type Activity } from "../badges";
+import { activityState, onOutput, shouldNotify, type Activity } from "../badges";
 
 const initial: Activity = { badge: 0, lastOutputAt: null, notified: false };
 
@@ -79,5 +79,47 @@ describe("shouldNotify", () => {
     const a = onOutput(initial, 1000, true);
     expect(a.badge).toBe(0);
     expect(shouldNotify(a, 1000 + 5000, true, false)).toBe(true);
+  });
+});
+
+describe("activityState", () => {
+  const busy: Activity = { badge: 0, lastOutputAt: 10_000, notified: false };
+
+  it("meldet 'idle', solange es nie Output gab", () => {
+    expect(activityState(initial, 50_000, false)).toBe("idle");
+  });
+
+  it("meldet 'working', solange der letzte Output noch keine Sekunde her ist", () => {
+    expect(activityState(busy, 10_500, false)).toBe("working");
+  });
+
+  // Derselbe Schwellenwert, aus dem heute die Benachrichtigung entsteht — beides bedeutet
+  // "wartet vermutlich auf Eingabe", also darf es nicht auseinanderlaufen.
+  it("meldet 'waiting', sobald der Schwellenwert erreicht ist", () => {
+    expect(activityState(busy, 12_000, false)).toBe("waiting");
+    expect(activityState(busy, 99_000, false)).toBe("waiting");
+  });
+
+  it("nutzt denselben Schwellenwert wie shouldNotify", () => {
+    const now = 10_000 + 2000;
+    expect(shouldNotify(busy, now, true, false)).toBe(true);
+    expect(activityState(busy, now, false)).toBe("waiting");
+  });
+
+  it("respektiert einen abweichenden Schwellenwert", () => {
+    expect(activityState(busy, 13_000, false, 5000)).toBe("working");
+    expect(activityState(busy, 16_000, false, 5000)).toBe("waiting");
+  });
+
+  // Eine Session, die auf Reconnect wartet, hat keinen laufenden Prozess — sie ist weder
+  // beschäftigt noch fertig, und ein Haken wäre dort schlicht gelogen.
+  it("meldet 'lost' unabhängig von der Output-Zeit", () => {
+    expect(activityState(busy, 10_500, true)).toBe("lost");
+    expect(activityState(busy, 99_000, true)).toBe("lost");
+    expect(activityState(initial, 99_000, true)).toBe("lost");
+  });
+
+  it("behandelt einen Zeitsprung rückwärts nicht als 'waiting'", () => {
+    expect(activityState(busy, 9_000, false)).toBe("working");
   });
 });
