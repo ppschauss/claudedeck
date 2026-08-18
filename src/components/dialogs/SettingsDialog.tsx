@@ -518,6 +518,9 @@ function Diagnose() {
         value={
           werte
             ? [
+                werte.letzterAuswahlVersatz === null
+                  ? "auswahlVersatz=noch nichts markiert"
+                  : `auswahlVersatz=${werte.letzterAuswahlVersatz} Zeilen`,
                 `dpr=${werte.devicePixelRatio}`,
                 `angenommen=${werte.angenommeneZeilenhoehe}`,
                 `echt=${werte.echterZeilenabstand}`,
@@ -536,8 +539,9 @@ function Diagnose() {
         Neu messen
       </button>
       <span className="settings-hint">
-        Bitte diese Zeile weitergeben, wenn die Mausauswahl daneben greift — daraus lässt sich
-        die Ursache eindeutig ablesen.
+        Erst im Terminal etwas markieren, dann hier „Neu messen". `auswahlVersatz` ist der
+        gesuchte Wert: 0 heißt getroffen, 3 heißt „xterm markierte drei Zeilen weiter unten".
+        Bitte die Zeile weitergeben.
       </span>
     </div>
   );

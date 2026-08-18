@@ -23,6 +23,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { altGraphChar } from "./keyboard";
+import { auswahlVersatz } from "./selectionProbe";
 import { DEFAULT_DISPLAY, themeById, type TerminalDisplay } from "./terminalTheme";
 
 interface TermEntry {
@@ -34,6 +35,9 @@ interface TermEntry {
 }
 
 const pool = new Map<string, TermEntry>();
+
+/** Fehler der jeweils letzten Mausauswahl je Session — von `diagnose()` ausgelesen. */
+const letzterVersatz = new Map<string, number>();
 
 /**
  * Aktuelle Darstellung. Wird von `applyDisplay()` gesetzt und von `ensure()` mitbenutzt, damit
@@ -141,6 +145,49 @@ export function ensure(
     return false;
   });
 
+  // Misst bei jeder echten Mausauswahl, ob xterm die Zeile trifft, die unter dem Zeiger lag.
+  // Nur so kommt man an den gemeldeten Versatz heran: die statische Geometrie war in jeder hier
+  // prüfbaren Umgebung korrekt (Gecko und Chromium, 100–250 % Skalierung, echte App-CSS), der
+  // Fehler tritt aber auf einem Windows-WebView2 auf, an das ich von hier nicht herankomme.
+  let zeigerY: number | null = null;
+  const beiMausAb = (ev: MouseEvent) => {
+    zeigerY = ev.clientY;
+  };
+  const beiMausAuf = () => {
+    const y = zeigerY;
+    zeigerY = null;
+    if (y === null) return;
+    // Nach dem Loslassen einen Tick warten — xterm setzt die Auswahl erst danach.
+    setTimeout(() => {
+      const rows = el.querySelector(".xterm-rows");
+      if (!rows) return;
+      let zeileUnterZeiger: number | null = null;
+      for (let i = 0; i < rows.children.length; i++) {
+        const r = (rows.children[i] as HTMLElement).getBoundingClientRect();
+        if (y >= r.top && y < r.bottom) {
+          zeileUnterZeiger = i;
+          break;
+        }
+      }
+      const pos = term.getSelectionPosition();
+      const versatz = auswahlVersatz({
+        viewportY: term.buffer.active.viewportY,
+        zeileUnterZeiger,
+        auswahlStartY: pos ? pos.start.y : null,
+      });
+      if (versatz !== null) letzterVersatz.set(sessionId, versatz);
+    }, 0);
+  };
+  el.addEventListener("mousedown", beiMausAb);
+  el.addEventListener("mouseup", beiMausAuf);
+  disposables.push({
+    dispose: () => {
+      el.removeEventListener("mousedown", beiMausAb);
+      el.removeEventListener("mouseup", beiMausAuf);
+      letzterVersatz.delete(sessionId);
+    },
+  });
+
   const entry: TermEntry = { term, fit, search, el, disposables };
   pool.set(sessionId, entry);
   return entry;
@@ -208,6 +255,12 @@ export interface TerminalDiagnostics {
   /** Abstand zwischen Oberkante des Bezugselements der Mausrechnung und der ersten Zeile. */
   versatzObenPx: number;
   schriftart: string;
+  /**
+   * Fehler der letzten echten Mausauswahl in Zeilen: positiv heißt „xterm markierte weiter
+   * unten als gezeigt". `null`, solange noch nichts markiert wurde. Das ist der eigentliche
+   * Messwert — die Geometriezahlen darüber waren in allen hier prüfbaren Umgebungen korrekt.
+   */
+  letzterAuswahlVersatz: number | null;
 }
 
 /**
@@ -247,6 +300,7 @@ export function diagnose(sessionId: string): TerminalDiagnostics | null {
     driftNachZehnZeilen: round(zeile(10).top - zeile(0).top - 10 * angenommen),
     versatzObenPx: round(rows.getBoundingClientRect().top - screen.getBoundingClientRect().top),
     schriftart: entry.term.options.fontFamily ?? "",
+    letzterAuswahlVersatz: letzterVersatz.get(sessionId) ?? null,
   };
 }
 
