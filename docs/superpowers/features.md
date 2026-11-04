@@ -561,6 +561,49 @@ Weboberfläche) damit voraussichtlich überflüssig.
   aufbewahrt und auf Geräten gespiegelt.
 - **Q11** `[vorschlag]` Entscheidung: Chat **statt** I9 (Weboberfläche). Beides zu
   bauen wäre doppelte Arbeit für denselben Zweck.
+- **Q12** `[plan]` **Einstellungsseite für den Bot**: welche Funktionen er überhaupt
+  hat — Auslastung anzeigen, Sessions starten/stoppen, Benachrichtigungen, Freigaben,
+  Task anlegen. Setzt Q9 um: Befehlsklassen werden konfiguriert statt hartcodiert.
+  Liegt serverseitig (I1), weil der Client nichts speichert; `SettingsDialog.tsx`
+  existiert als Ort.
+- **Q13** `[plan]` **Einstellungen niemals per Chat änderbar.** Wäre „Einstellungen
+  ändern" eine freischaltbare Funktion, ist jede Beschränkung wertlos — ein
+  kompromittierter Chat-Account schaltet sich selbst alles frei. Rechteverwaltung nie
+  über den Kanal, den sie beschränkt. Änderungen ins Audit-Log (H4).
+- **Q14** `[plan]` **Rollen statt globaler Schalter.** Funktion × Rolle als Matrix,
+  Räume und Absender bekommen eine Rolle. Sobald ein Raum dabei ist, in dem nicht nur
+  du bist (Kunde, Subunternehmer), braucht es Rechte pro Raum — jetzt so gebaut kostet
+  kaum mehr und erspart den Umbau bei I13:
+
+      [bot.roles.owner]
+      notify   = ["task_start","task_done","task_stuck","task_failed","load_warning","deploy"]
+      commands = ["status","load","session_start","session_stop","approve","task_create"]
+
+      [bot.roles.readonly]
+      notify   = ["task_done","task_failed"]
+      commands = ["status"]
+
+      [[bot.rooms]]
+      id = "!kunde-x:matrix.example.de"
+      role = "readonly"
+      projects = ["shop-kunde-x"]
+
+- **Q15** `[plan]` **Benachrichtigungen einzeln schaltbar**, nicht als Gruppe. Kein
+  Komfortpunkt, sondern entscheidend für die Benutzung: kommt bei jedem Task-Start eine
+  Nachricht, ignorierst du den Kanal nach drei Tagen — und damit auch die Meldung, die
+  zählt. Schaltbar mindestens: Task-Start, Task-Ende, Fehler, hängend (B12),
+  Auslastungsschwelle (H7), Deploy (N4), sensibler Pfad (H8).
+- **Q16** `[vorschlag]` **Ruhezeiten mit Ausnahmeliste**: nachts nur Fehler und
+  kritische Schwellen, der Rest wartet bis morgens (ergänzt L7, Tagesstart).
+- **Q17** `[vorschlag]` **Projekt-zu-Raum-Zuordnung**: welches Projekt meldet in
+  welchen Raum. Ein Raum je Kunde hält Kundenprojekte getrennt — und verhindert, dass
+  in einem Kundenraum Meldungen anderer Projekte auftauchen.
+- **Q18** `[vorschlag]` **Testnachricht aus der Einstellungsseite.** Prüft Anbindung,
+  Raum-ID und Rechte in einem Klick. Ohne das merkt man eine falsche Konfiguration erst,
+  wenn die erste wichtige Meldung nicht ankommt.
+- **Q19** `[vorschlag]` **Chat-Befehle ins Audit-Log** (H4): wer hat wann was per Chat
+  ausgelöst. Bei einem Kanal, der Sessions starten kann, ist das die Mindestspur.
+
 
 ---
 
