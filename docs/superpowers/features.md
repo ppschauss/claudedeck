@@ -207,6 +207,14 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   API" oder „Worktree pro Task" mit Begründung festhalten. In sechs Monaten ist sonst
   unklar, warum etwas so ist, und es wird versehentlich zurückgedreht.
 
+- **F7** `[vorschlag]` **Wissens-Rückfluss nach jedem Task.** Die Session schlägt einen
+  Eintrag für `/srv/knowledge/` vor, du bestätigst oder verwirfst. Ohne das bleibt die
+  Wissensbasis auf dem Stand des Tages, an dem sie angelegt wurde — Pflege ist immer
+  der unwichtigste Punkt des Tages.
+- **F8** `[vorschlag]` **Fehler-Datenbank**: „dieser Fehler trat schon einmal auf,
+  Lösung war X", projektübergreifend. Bei mehreren Kundensystemen auf demselben Stack
+  wiederholen sich Fehler, und die Lösung steckt derzeit nur in einem alten Terminal.
+
 ## G — Dateien
 
 - **G1** `[da]` SFTP-Ablage lesend: Verzeichnis listen, Vorschau, Download
@@ -381,6 +389,81 @@ Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
   wenn er anruft.
 - **M6** `[vorschlag]` **Wartungsbericht je Kunde**, monatlich, aus M1–M5. Was geprüft,
   was gefunden, was behoben wurde. Belegt Arbeit, die sonst unsichtbar bleibt.
+
+- **I10** `[vorschlag]` **Disk-Watchdog mit Schwelle und Auto-Cleanup.** Autonome
+  Sessions produzieren `node_modules`, Builds, Transkripte und Archive. Ist die Platte
+  voll, scheitert alles auf schwer deutbare Weise — ein Schreibfehler mitten im Task
+  sieht nicht nach Platzmangel aus. Alte Worktrees automatisch wegräumen.
+- **I11** `[vorschlag]` **Wiederanlauf nach Server-Reboot.** tmux-Sessions überleben
+  ihn nicht; beim ersten Kernel-Update sind alle laufenden Tasks spurlos weg. Braucht
+  den Task-Status serverseitig plus systemd-Hook beim Hochfahren, der offene Tasks
+  wieder anstößt oder in Plane als unterbrochen markiert.
+- **I12** `[vorschlag]` **Setup-Script für den Server** (Backend, Dispatcher,
+  systemd-Units, Verzeichnisse, rclone-Remotes). Sonst ist die Installation ein
+  Blogpost im Kopf, und nach einem Ausfall rekonstruierst du sie aus Erinnerung.
+- **I13** `[vorschlag]` **Rechteebene für mehrere Nutzer** — offene Architekturfrage.
+  Wenn später ein Subunternehmer oder Praktikant dazukommt: wer darf welche Projekte
+  sehen, wer darf Tasks starten, wer sieht die Credentials (A9). Nachträglich teuer.
+- **I14** `[vorschlag]` **Auto-Update des Clients** (Tauri-Updater). Du baust `.msi`
+  und portable `.exe` in CI; ohne Update-Mechanismus läuft auf dem Rechner dauerhaft
+  eine alte Version, während das Backend weiterzieht.
+
+## N — Qualitätssicherung & Auslieferung
+
+Der Loop endet derzeit bei „PR offen". Alles danach — Staging, Prüfung, Live — ist
+Handarbeit. Dieser Bereich schließt ihn.
+
+- **N1** `[vorschlag]` **Pflicht-Checks vor dem PR**: die schnellen Prüfungen des
+  Projekts (Linter, Typecheck, Tests, falls vorhanden). Niemals durch Abschalten eines
+  Tests grün machen — gehört als Regel ins `CLAUDE.md`-Template (C3).
+- **N2** `[vorschlag]` **Smoke-Test statt Unit-Tests, wo keine existieren.** Bei
+  Kundenseiten ist „keine Tests" der Normalfall. Realistisch: Seite antwortet mit 200,
+  kein PHP-Fatal im Log, kritische Routen erreichbar, Formular rendert. Fängt das
+  meiste, kostet eine Konfigurationsdatei je Projekt.
+- **N3** `[vorschlag]` **Visual Regression für Frontend-Änderungen** (Playwright,
+  Screenshot vorher/nachher). Fängt genau die Fehler, die bei CSS- und Theme-Arbeit
+  entstehen und die kein Test findet.
+- **N4** `[vorschlag]` **Staging-Deploy als Task-Abschluss** (`wp-cli`, rsync):
+  Task fertig → Staging → Smoke-Test → Review → Live. Der eigentliche Abschluss des
+  Loops, und der größte einzelne Block in diesem Dokument.
+- **N5** `[vorschlag]` **Rollback-Knopf**: ein Deploy zurück, mit Datenbank-Dump
+  davor. Ohne das traut man dem automatischen Deploy nie.
+- **N6** `[vorschlag]` **Zeit- und Wartungsfenster je Projekt.** Kein Deploy
+  freitagabends, kein Update während der Geschäftszeiten des Kunden, rechenintensive
+  Tasks nachts. Pro Projekt konfigurierbar.
+
+## O — Weitere Task-Quellen
+
+Der Dispatcher ist ein Webhook-Receiver — weitere Quellen kosten fast nichts.
+
+- **O1** `[vorschlag]` **Monitoring-Alert → Task mit Erstdiagnose.** Uptime-Check
+  schlägt an, die Session prüft sofort Logs, Statuscode, Zertifikat, Disk und
+  Prozesse und schreibt den Befund in den Task. Bis du aufs Handy schaust, steht
+  dort, was los ist. Der nützlichste Punkt in diesem Bereich.
+- **O2** `[vorschlag]` **E-Mail → Task.** Kundenmail an eine Projektadresse wird ein
+  Plane-Task mit Zusammenfassung. Vorsicht: Mailinhalte sind ungeprüfte Fremdeingabe
+  und dürfen keine Aktion auslösen, nur einen Task anlegen.
+- **O3** `[vorschlag]` **SEO-Monitoring → Task.** Ranking- oder Indexierungseinbruch
+  (Search Console API, eigenes Rank-Tracking) wird ein Task mit Analyse statt einer
+  Mail, die man wegklickt.
+- **O4** `[vorschlag]` Formular oder Kundenportal als Quelle — erst sinnvoll, wenn
+  I13 (Rechteebene) steht.
+
+## P — Datenschutz & Nachweise
+
+- **P1** `[vorschlag]` **Verarbeitungsverzeichnis je Projekt**: welche
+  personenbezogenen Daten, Rechtsgrundlage, Empfänger, Löschfrist. Brauchst du für
+  Kundenprojekte ohnehin; an einem Ort gepflegt beantwortet es sich in Minuten statt
+  in Stunden. Gehört ins Projekt-Template (C11).
+- **P2** `[vorschlag]` **Task-Vorlage für Löschanfragen** (Art. 17): wo liegen Daten
+  dieses Betroffenen, was wird gelöscht, was bleibt aus Aufbewahrungspflicht, Protokoll
+  der Erledigung.
+- **P3** `[vorschlag]` **Aufbewahrungsfristen zentral**: Transkripte (B13), Audit-Log
+  (H4), Archive (J14), Logs. Ohne bewusste Frist sammelt das System unbegrenzt
+  Kundendaten — und genau das ist der Vorwurf, der am leichtesten zu vermeiden ist.
+- **P4** `[vorschlag]` **TDDDG-Check im Projekt-Template**: bei jedem Projekt mit
+  Tracking, Embeds oder LocalStorage-Nutzung ein Consent-Gate als Pflichtpunkt, bevor
+  der Task als fertig gilt.
 
 ---
 
