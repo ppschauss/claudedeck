@@ -517,6 +517,51 @@ Der Dispatcher ist ein Webhook-Receiver — weitere Quellen kosten fast nichts.
   Tracking, Embeds oder LocalStorage-Nutzung ein Consent-Gate als Pflichtpunkt, bevor
   der Task als fertig gilt.
 
+## Q — Chat-Anbindung (VibeCode2Go)
+
+Nicht nur Benachrichtigung, sondern **bidirektional**: antworten, freigeben, Status
+abfragen, Task anlegen — vom Handy, ohne etwas zu öffnen. Ein Chat-Dienst bringt
+Transport, Identität, Push und Clients für alle Plattformen mit; macht I9 (eigene
+Weboberfläche) damit voraussichtlich überflüssig.
+
+- **Q1** `[vorschlag]` **Matrix self-hosted** (Synapse oder Conduit) als primäre
+  Anbindung. Eigener Server, EU, Element als Client überall, Threads von Natur aus.
+  Haken: E2E mit Bots ist fummelig (Megolm-Keys, Device-Verification) — auf dem
+  eigenen Server ist ein unverschlüsselter Raum meist vertretbar, weil kein Dritter
+  mitliest. **Empfehlung.**
+- **Q2** `[vorschlag]` **Telegram** als einfachste Variante: die Bot-API lässt sich per
+  Long-Polling abfragen, der Server braucht also keinen eingehenden Port (passt zu V5,
+  A8). Haken: Bots können keine E2E-Chats, alle Nachrichten liegen im Klartext auf
+  Telegram-Servern (Dubai/UK, weltweit verteilt). Durch den Kanal laufen Dateipfade,
+  Logs, Kundennamen und Task-Titel — Drittlandtransfer mit unklarer Rechtsgrundlage.
+  Nur mit Q10 (Inhaltsfilter), oder für Projekte ohne personenbezogene Daten.
+- **Q3** `[vorschlag]` **ntfy** (= H3) für reine Pushes, self-hosted. Kann
+  Action-Buttons mit HTTP-Aufruf — damit ist eine einfache Freigabe („erlauben /
+  ablehnen") ohne vollen Chat-Bot möglich. Guter Zwischenschritt.
+- **Q4** `[vorschlag]` **Ein Thread je Task.** Fortschritt, Rückfragen und Ergebnis
+  laufen im selben Thread wie die Startmeldung. Entspricht D10 im Chat statt in Plane
+  und ist unterwegs besser lesbar als eine Task-Historie.
+- **Q5** `[vorschlag]` **Permission-Prompts per Chat beantworten.** Löst B12
+  (hängende Session) dort, wo es wehtut: unterwegs. Entspricht K6 für den Fall, dass
+  der Rechner zu ist — und das ist bei dieser Architektur der Normalfall.
+- **Q6** `[vorschlag]` Task freigeben, abbrechen oder zurückstellen per Chat
+  (Gegenstück zu D9, Plan-First).
+- **Q7** `[vorschlag]` **Neuen Task per Chat anlegen** → wird ein Plane-Task. Die
+  Idee unterwegs landet im System statt im Kopf.
+- **Q8** `[vorschlag]` Status abfragen: was läuft, was hängt, was wartet auf Review
+  (H5/L7 als Chat-Antwort).
+- **Q9** `[vorschlag]` **Absender-Allowlist und getrennte Befehlsklassen.** Ein Bot,
+  der Befehle annimmt, ist ein Fernzugriff auf den Server — kompromittierter
+  Chat-Account heißt kompromittierter Server. Lesen frei, Freigaben erlaubt,
+  **niemals freie Shell-Befehle per Chat**. „Führe aus: `<text>`" wird nicht gebaut,
+  so praktisch es unterwegs klingt.
+- **Q10** `[vorschlag]` **Inhaltsfilter ausgehend**: keine Secret-Werte, keine
+  Kundendaten, keine vollständigen Logs in den Chat. Bei einem Fremdhoster (Q2)
+  zwingend, bei Matrix self-hosted guter Stil — Chat-Historien werden lange
+  aufbewahrt und auf Geräten gespiegelt.
+- **Q11** `[vorschlag]` Entscheidung: Chat **statt** I9 (Weboberfläche). Beides zu
+  bauen wäre doppelte Arbeit für denselben Zweck.
+
 ---
 
 ## Meine fünf wichtigsten Vorschläge
