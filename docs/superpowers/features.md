@@ -24,9 +24,20 @@ Noch nichts davon ist installiert (Stand 2026-11-04). Diese Stufe liegt vor alle
 Funktionen unten — ohne sie ist keine davon baubar. Bewusst knapp gehalten: es sind
 Entscheidungen und Installationen, keine Features.
 
-- **V1** Plane self-hosted (Docker Compose), auf eigenem Server oder EU-Hoster.
-  Gleich in aktueller Version aufsetzen — dann steht das Webhook-Signatur-Schema
-  (D2) von vornherein fest, statt für eine Altversion rekonstruiert zu werden.
+- **V1** **Task-Quelle wählen — Empfehlung geändert 2026-11-04 auf Forgejo.**
+  Beide Optionen kosten nichts; entscheidend ist der Ressourcenbedarf auf dem Homelab:
+  - **Forgejo** (Empfehlung): ein Binary, ~170 MB RAM, SQLite genügt. Issues mit
+    Labels, Assignees, Milestones und Fälligkeitsdaten, Kanban-Boards, Wiki, REST-API,
+    Webhooks. **Ersetzt GitHub mit** — Git, Issues, PRs, Wiki und CI im eigenen Haus,
+    was Kundencode aus den USA holt (DSGVO), das Review-Gate (C7) lokal macht, J1 zum
+    eigenen Repo umlenkt und Token-Rechte (A10) abfragbar macht.
+  - **Plane CE**: ebenfalls kostenlos und ohne Nutzergrenze, aber ein
+    13-Service-Docker-Stack (Postgres, Redis, MinIO, Worker, …), Minimum 2 vCPU /
+    4 GB RAM, empfohlen 8 GB. Konkurriert auf dem Homelab direkt mit parallelen
+    Sessions und Builds. Dafür echtes PM: Cycles mit Burn-down, Gantt, tiefe Views,
+    Intake, Estimates.
+  - Nicht selbst bauen: Monate Arbeit für etwas, das zweimal fertig und kostenlos
+    vorliegt — und danach dauerhafte Pflege statt Kundenprojekte.
 - **V2** Verzeichnisstruktur festlegen und anlegen. Vorschlag:
   `/srv/projects/` (Projekte) · `/srv/knowledge/` (Wissensbasis, eigenes Git-Repo) ·
   `/var/lib/claudedeck/` (Backend-Daten) · Archivziel separat (J3).
@@ -171,8 +182,12 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 
 ## D — Aufgaben & Plane-Anbindung
 
-- **D1** `[plan]` Dispatcher: Plane-Webhook → Session im Projektpfad starten
+- **D1** `[plan]` Dispatcher: Webhook → Session im Projektpfad starten
   (`crates/claudedeck-dispatch`)
+- **D1a** `[plan]` **Task-Quelle hinter einem Adapter**, nicht direkt angebunden:
+  Webhook rein, Task-Objekt raus, Status zurück — drei Methoden. Dann kostet ein
+  Wechsel zwischen Forgejo, Plane und GitHub einen Adapter statt eines Umbaus, und
+  die Entscheidung in V1 bleibt revidierbar.
 - **D2** `[plan]` Webhook-Signaturprüfung (Schema versionsabhängig: `X-Plane-Signature`
   HMAC-SHA256 oder Svix — in der eigenen Instanz verifizieren)
 - **D3** `[plan]` Projekt-Whitelist im Dispatcher, keine Pfade aus dem Payload
@@ -609,10 +624,12 @@ Weboberfläche) damit voraussichtlich überflüssig.
   ausgelöst. Bei einem Kanal, der Sessions starten kann, ist das die Mindestspur.
 
 
-## Abgrenzung: was Plane abdeckt
+## Abgrenzung: was ein PM-Tool abdeckt
 
-Geprüft 2026-11-04 für die **Community Edition** (self-hosted, kostenlos). Begründet
-D12. Vorbehalt: die Edition-Details stammen teils aus Forum- und Drittquellen — vor
+Geprüft 2026-11-04 für Plane **Community Edition** (self-hosted, kostenlos). Begründet
+D12. Die Wahl der Quelle selbst steht in V1 — Empfehlung inzwischen Forgejo, wegen
+des Ressourcenbedarfs von Plane; Forgejo deckt Issues, Labels, Assignees, Milestones,
+Kanban, Wiki, API und Webhooks ab, aber keine Cycles, Gantt, Intake oder Estimates. Vorbehalt: die Edition-Details stammen teils aus Forum- und Drittquellen — vor
 der Installation auf plane.so/pricing gegenprüfen, die Tiers haben sich geändert.
 
 **Enthalten, nicht nachbauen:** Projekte · Work Items mit Rich-Text, Anhängen,
