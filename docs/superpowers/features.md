@@ -18,6 +18,33 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 
 ---
 
+## 0 — Voraussetzungen
+
+Noch nichts davon ist installiert (Stand 2026-11-04). Diese Stufe liegt vor allen
+Funktionen unten — ohne sie ist keine davon baubar. Bewusst knapp gehalten: es sind
+Entscheidungen und Installationen, keine Features.
+
+- **V1** Plane self-hosted (Docker Compose), auf eigenem Server oder EU-Hoster.
+  Gleich in aktueller Version aufsetzen — dann steht das Webhook-Signatur-Schema
+  (D2) von vornherein fest, statt für eine Altversion rekonstruiert zu werden.
+- **V2** Verzeichnisstruktur festlegen und anlegen. Vorschlag:
+  `/srv/projects/` (Projekte) · `/srv/knowledge/` (Wissensbasis, eigenes Git-Repo) ·
+  `/var/lib/claudedeck/` (Backend-Daten) · Archivziel separat (J3).
+  Später umziehen heißt: Session-Namen, Manifeste und Plane-Verweise nachziehen.
+- **V3** Claude Code auf dem Server installieren und authentifizieren, `tmux`
+  vorhanden. Version notieren — siehe K9.
+- **V4** Vaultwarden self-hosted für die interaktive Nutzung (E2).
+- **V5** Erreichbarkeit entscheiden: Webhook-Endpoint braucht eine Adresse, die Plane
+  erreicht. Entweder Reverse Proxy mit TLS, oder — Empfehlung — Plane und Dispatcher
+  im gleichen Netz und der Server nicht öffentlich (A8, Tailscale/WireGuard).
+- **V6** Archivziel einrichten, sobald J ansteht: rclone-Remote plus
+  Verschlüsselungsschlüssel (J3, J5). Nicht nötig für den ersten Loop.
+- **V7** Backup der Serverdaten von Anfang an (I5), nicht nachträglich. Ab V2 liegen
+  dort Daten, die nur dort liegen.
+
+Reihenfolge: V1–V3 sind die Basis für alles. V4 kommt mit dem ersten echten
+Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
+
 ## A — Verbindung & Authentifizierung
 
 - **A1** `[da]` SSH-Verbindung zum Server, mehrere Sessions über eine gemultiplexte
@@ -504,12 +531,14 @@ Nach Verhältnis von Aufwand zu verhindertem Schmerz:
 
 ## Offene Fragen
 
-- ~~Zwei Modi?~~ **Geklärt 2026-11-04**: beide. Siehe I8.
-- **Archivziel** konkret — Nextcloud, Hetzner, OneDrive, externer Datenträger? Bestimmt,
-  welche rclone-Backends eingerichtet werden (J3).
+Nichts ist installiert — die früheren Fragen nach Plane-Version und Serverpfad sind
+damit keine Abfragen, sondern Entscheidungen in Stufe 0 (V1, V2).
+
+- **Reihenfolge**: erst die Dispatcher-Kette (D1–D5, B11, N1/N2, D8) oder erst die
+  Wartungs-Tasks aus M? M braucht keinen Dispatcher und liefert früher etwas
+  Benutzbares; die Kette ist das eigentliche Ziel.
 - **GitHub-Tokens** classic oder fine-grained? Entscheidet, ob die Rechte-Anzeige in
-  A10 automatisch geht oder ein Pflegefeld wird.
-- **Plane-Version** der Instanz — bestimmt das Webhook-Signatur-Schema (D2).
-- **Projektpfad** auf dem Server — `/srv/projects/`?
-- **Mehrbenutzer** oder nur du? Zuweisung und Team (D12) sind in Plane, aber wenn
-  mehrere Leute Sessions starten, braucht das Backend eine Rechteebene.
+  A10 abgefragt werden kann oder reines Pflegefeld bleibt.
+- **Mehrbenutzer** jetzt mitdenken oder später (I13)? Nachträglich teuer, vorab
+  unnötiger Aufwand, falls es bei einem Nutzer bleibt.
+- **Archivziel** (J3) — bestimmt das rclone-Remote, aber erst ab Stufe J relevant.
