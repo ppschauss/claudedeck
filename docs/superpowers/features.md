@@ -38,6 +38,24 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   Kein offener Port im Internet, kein Brute-Force-Vektor, Fail2Ban erübrigt sich
   weitgehend. Empfehlung, falls der Server nicht im LAN steht.
 
+- **A9** `[plan]` **Credentials-Bereich** in der Oberfläche: SSH-Zugänge und Tokens
+  zentral verwalten. Ablage serverseitig (I1), Werte nie zum Client.
+- **A10** `[plan]` **Rechte/Scopes je Zugang anzeigen.** Nur teilweise automatisch
+  ermittelbar — das Feld braucht einen Herkunftsmarker und ein Prüfdatum, sonst zeigt
+  es irgendwann Fiktion:
+  - GitHub **classic** PAT: Scopes stehen im `X-OAuth-Scopes`-Response-Header → automatisch
+  - GitHub **fine-grained** PAT: liefert diesen Header nicht. `X-Accepted-GitHub-Permissions`
+    sagt nur, was der *Endpoint verlangt*, nicht was der Token *hat*. Keine API für die
+    eigenen Rechte → manuelles Feld oder Endpoint-Probing (hässlich)
+  - Plane-API-Key: kein Scope-Konzept, immer workspace-weit → festes Feld
+  - SSH-Key: hat selbst keine Rechte. Relevant sind die `authorized_keys`-Optionen und
+    die Unix-Rechte des Users → `sudo -l` und Gruppenzugehörigkeit abfragen
+- **A11** `[vorschlag]` **Ablaufdatum und Rotationshinweis je Zugang.** GitHub-PATs
+  laufen ab, iCloud-Trust-Token nach 30 Tagen. Ein abgelaufener Token in einer
+  unbeaufsichtigten Session äußert sich als rätselhafter Fehler mitten im Task.
+- **A12** `[vorschlag]` **„Letzter erfolgreicher Einsatz" je Zugang.** Findet toten
+  Ballast — Tokens, die noch Rechte haben, aber niemand mehr braucht.
+
 ## B — Sessions & Terminal
 
 - **B1** `[da]` Laufende tmux-Sessions auflisten, Status ●/○
@@ -70,6 +88,16 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 - **B15** `[vorschlag]` **Rate-Limit-Erkennung.** Läuft die Session gegen ein
   Nutzungslimit, soll sie den Plane-Task zurück auf „Todo" legen und das vermerken,
   statt stillzustehen und als „in Arbeit" zu gelten.
+
+- **B16** `[plan]` **Console**: freies Terminal ohne Task-Bindung, für Handgriffe auf
+  dem Server. Wichtig: als normale tmux-Session (`console`) anlegen, nicht als
+  Sonderweg — sonst greifen Auto-Reconnect (A6) und „läuft weiter, wenn der Client
+  zugeht" (B10) nicht.
+- **B17** `[vorschlag]` Mehrere benannte Konsolen statt einer. Kostet fast nichts,
+  weil es dieselbe Mechanik ist, und eine Konsole ist immer zu wenig.
+- **B18** `[plan]` **Session-Übersicht aktiv/inaktiv + Session-Archiv pro Projekt.**
+  Das Archiv sind die mitgeschriebenen Transkripte — setzt B13 voraus, sonst ist nach
+  Session-Ende nichts mehr da, was man archivieren könnte.
 
 ## C — Projekte
 
@@ -168,6 +196,10 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   Worktrees im Panel, statt im Terminal zu scrollen. Das ist der Blick, den man beim
   Review tatsächlich braucht.
 
+- **G5** `[vorschlag]` Upload per Drag & Drop, sobald G2 steht
+- **G6** `[vorschlag]` Pfad-Lesezeichen je Projekt (`uploads/`, `logs/`) — erspart
+  das Durchklicken bei jedem Öffnen
+
 ## H — Beobachtung & Benachrichtigung
 
 - **H1** `[da]` Desktop-Notification bei Output in inaktiver Session, pro Session
@@ -185,6 +217,12 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 - **H5** `[vorschlag]` **Übersicht statt Sessionliste**: was läuft, was hängt, was
   wartet auf Review, was ist heute fertig geworden. Sobald mehr als drei Tasks
   parallel laufen, ist die flache Liste zu wenig.
+
+- **H6** `[plan]` **Auslastungsanzeige** des Servers: CPU, RAM, Disk, Load, und wie
+  viele Sessions gerade laufen
+- **H7** `[vorschlag]` **Auslastung als Bremse, nicht nur als Anzeige.** Über einer
+  Schwelle startet kein neuer Task, sondern wandert in die Warteschlange (D11). Eine
+  Anzeige, die man ignoriert, verhindert keinen überladenen Server.
 
 ## I — Backend & Betrieb
 
@@ -206,6 +244,67 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   `/srv/projects/`, nicht als root. Er nimmt Daten aus dem Internet an — das ist die
   exponierteste Komponente.
 
+- **I8** `[plan]` **Zwei Modi: Remote und Lokal.** Remote = nichts auf dem Gerät außer
+  Host/Port, SSH-Key und Host-Key-Fingerprint. Lokal = Arbeitsumgebung liegt auf dem
+  Gerät, dortige Ablage erlaubt. `config.rs` bekommt dafür ein Trait `ConfigStore` mit
+  `LocalStore` und `RemoteStore`; das `Config`-Struct bleibt für beide dasselbe.
+
+## J — Archiv & Archivierung
+
+- **J1** `[plan]` Projekt archivieren mit Abfrage: **Files ins GitHub-Repo oder lokal**
+- **J2** `[plan]` Packen + Doku + definierte Benennung
+  (Vorschlag: `<projekt>_<YYYY-MM-DD>_<kurzbeschreibung>.tar.zst`)
+- **J3** `[plan]` **Archivpfad separat und frei wählbar** — über `rclone`. Ein Tool
+  deckt Drive, OneDrive, SharePoint, Nextcloud, S3, SFTP und externe Datenträger ab;
+  jeweils eigene APIs und OAuth-Flows zu bauen wäre ein Projekt für sich. Die
+  rclone-Config enthält Tokens → gehört serverseitig und verschlüsselt.
+- **J4** `[nein]` **iCloud als Archivziel.** rclone hat das Backend seit v1.69, aber
+  der Trust-Token läuft nach 30 Tagen ab und braucht dann erneut 2FA von Hand,
+  App-spezifische Passwörter werden abgelehnt, und Advanced Data Protection muss
+  ausgeschaltet sein — ein Sicherheits-Downgrade des gesamten Apple-Kontos für ein
+  Archiv. Apple hat den Zugang mehrfach gebrochen. Für Automatisiertes unbrauchbar.
+- **J5** `[vorschlag]` **Verschlüsselung vor dem Upload** (`rclone crypt` oder `age`).
+  Sieht der Anbieter nur Chiffrat, ist der Drittlandtransfer praktisch entschärft und
+  OneDrive/SharePoint/Drive datenschutzrechtlich fast gleichgültig. Der Schlüssel
+  liegt beim Server und **niemals mit im Archiv**.
+- **J6** `[vorschlag]` Default-Ziel Nextcloud self-hosted oder Hetzner Storage Box
+  (EU, AVV unkompliziert). US-Dienste nur zusammen mit J5.
+- **J7** `[plan]` **Manifest und Doku neben das Archiv, nicht hinein.** Liegt die Doku
+  im Tarball, muss das Dashboard jedes Archiv entpacken, nur um Name und Beschreibung
+  anzuzeigen. Entscheidet über die Brauchbarkeit von J9.
+- **J8** `[plan]` Manifest-Inhalt: Projektname, Datum, Git-Remote und letzter Commit,
+  Branch, Session-Konfiguration, Secrets-**Referenzen**, Doku-Text, Checksumme,
+  **Format-Version**. Ohne Versionsfeld sind alte Archive später nicht mehr sicher
+  reaktivierbar.
+- **J9** `[plan]` **Archiv-Dashboard**: alle Archive mit Namen und Doku, ohne Entpacken
+- **J10** `[plan]` **1-Click reaktivieren**: herunterladen, entpacken, Pfad
+  wiederherstellen, Session starten. Setzt J8 voraus.
+- **J11** `[vorschlag]` **Git-Repo und Tarball nicht verwechseln.** Hat das Projekt ein
+  Remote, ist „pushen und Ordner löschen" das Archiv — vollständig und durchsuchbar.
+  Der Tarball ist für das, was *nicht* in Git liegt: Uploads, Assets, `.env`-Vorlagen,
+  lokale Datenbanken. Beides anbieten, aber getrennt benennen, sonst entstehen Archive,
+  die die Historie doppelt und die Uploads vergessen.
+- **J12** `[vorschlag]` Integritätsprüfung beim Reaktivieren gegen die Checksumme aus J8
+- **J13** `[vorschlag]` **Archiv-Test quartalsweise**: ein Archiv probeweise
+  reaktivieren. Ein nie getestetes Archiv ist kein Archiv, sondern eine Hoffnung.
+- **J14** `[vorschlag]` Aufbewahrungsfrist je Projekt. Kundenprojekte mit
+  personenbezogenen Daten gehören nicht unbegrenzt ins Archiv.
+
+## K — Claude-Funktionen in der Oberfläche
+
+- **K1** `[da]` Slash-Commands und MCP-Connectors scannen (`catalog/`)
+- **K2** `[plan]` **Agent-Übersicht**: welche Agents konfiguriert sind
+  (`.claude/agents/` im Projekt, `~/.claude/agents/` global)
+- **K3** `[plan]` **Welche Agents aktiv sind.** Haken: Subagents laufen *innerhalb* der
+  Claude-Session und sind von außen nicht sichtbar — über tmux oder die Prozessliste
+  nicht ermittelbar. Geht nur aus dem Transkript, **braucht also B13**.
+- **K4** `[vorschlag]` Skills-Übersicht, analog K2
+- **K5** `[vorschlag]` **MCP-Connector-Status** (verbunden / fehlgeschlagen / Auth
+  nötig). Ein nicht verbundener Connector scheitert sonst stumm mitten im Task, und
+  die Session wirkt nur unerklärlich unfähig.
+- **K6** `[vorschlag]` **Permission-Prompts in der Oberfläche beantworten** statt im
+  Terminal zu suchen, welche von acht Sessions gerade fragt. Direkte Ergänzung zu B12.
+
 ---
 
 ## Meine fünf wichtigsten Vorschläge
@@ -220,9 +319,11 @@ Nach Verhältnis von Aufwand zu verhindertem Schmerz:
 
 ## Offene Fragen
 
-- **Zwei Modi?** „Client speichert nichts, sofern keine Arbeitsumgebung hinterlegt
-  ist" — heißt das Remote-Modus (nichts lokal) **und** Lokal-Modus (Projekt auf dem
-  Gerät, dortige Ablage erlaubt)? Entscheidet, ob `config.rs` zwei Backends braucht.
+- ~~Zwei Modi?~~ **Geklärt 2026-11-04**: beide. Siehe I8.
+- **Archivziel** konkret — Nextcloud, Hetzner, OneDrive, externer Datenträger? Bestimmt,
+  welche rclone-Backends eingerichtet werden (J3).
+- **GitHub-Tokens** classic oder fine-grained? Entscheidet, ob die Rechte-Anzeige in
+  A10 automatisch geht oder ein Pflegefeld wird.
 - **Plane-Version** der Instanz — bestimmt das Webhook-Signatur-Schema (D2).
 - **Projektpfad** auf dem Server — `/srv/projects/`?
 - **Mehrbenutzer** oder nur du? Zuweisung und Team (D12) sind in Plane, aber wenn
