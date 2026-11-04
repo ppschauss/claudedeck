@@ -194,8 +194,8 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   gleichzeitige Sessions auf einem Homelab-Server heißt fünf Claude-Prozesse plus
   Builds. Eine Warteschlange ist billiger als ein überladener Server.
 - **D12** `[nein]` **PM-Funktionen nachbauen** (Terminierung, Kommentare, Zuweisung,
-  Team, Notifications, Milestones). Das ist vollständig Plane; Milestones heißen
-  dort Cycles/Modules. Nachbauen = Plane in Rust neu schreiben.
+  Team, Notifications, Milestones). Deckt Plane ab — siehe Abgrenzung unten.
+  Nachbauen = Plane in Rust neu schreiben.
 
 
 ## E — Secrets & Tokens
@@ -284,8 +284,9 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   `wp-config.php`, `.env`, `.htaccess`, `composer.json`, `package.json` oder etwas
   unter `.github/workflows/`, kommt sofort ein Hinweis — unabhängig vom Task-Ende.
   Kurze Liste, und genau die Dateien, bei denen ein stiller Fehler teuer wird.
-- **H9** `[vorschlag]` **Laufzeit je Task** erfassen. Für die Kundenabrechnung: die
-  echte Session-Zeit kennt nur ClaudeDeck, Plane sieht nur Status-Wechsel.
+- **H9** `[vorschlag]` **Laufzeit je Task** erfassen — **nötig, nicht optional**:
+  Zeiterfassung ist in Plane ein Pro-Feature, die Community Edition hat sie nicht.
+  Und die echte Session-Laufzeit kennt ohnehin nur ClaudeDeck.
 - **H10** `[vorschlag]` **Token-Kosten je Task, Projekt und Monat.** Fällt mit dem
   Limit aus B14 zusammen — wer kappen will, muss ohnehin zählen.
 
@@ -442,7 +443,9 @@ Der Loop reagiert auf Tasks. Dieser Bereich **erzeugt** sie — wiederkehrende A
 die bei Kundenbetreuung den größeren Teil ausmacht und gerade deshalb vergessen wird.
 Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
 
-- **M1** `[vorschlag]` **Geplante Tasks pro Projekt**: WordPress-Core- und
+- **M1** `[vorschlag]` **Geplante Tasks pro Projekt** — **nötig, nicht optional**:
+  wiederkehrende Work Items sind in Plane erst ab Pro verfügbar, die Community Edition
+  kann sie nicht. Also Cron plus API im Dispatcher. Inhalte: WordPress-Core- und
   Plugin-Updates prüfen, Backup-Verifikation, Broken Links, Core Web Vitals. Ergebnis
   als Plane-Task mit Befund, nicht als stiller Cron-Lauf.
 - **M2** `[vorschlag]` **Ablauf-Überwachung**: SSL-Zertifikate, Domains, API-Tokens
@@ -452,7 +455,8 @@ Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
   die man wegklickt.
 - **M4** `[vorschlag]` **PHP-/Runtime-EOL-Warnung**: welches Projekt läuft auf einer
   Version, die aus der Sicherheitswartung fällt. Mit Vorlauf, nicht am Stichtag.
-- **M5** `[vorschlag]` **Projekt-Health-Übersicht**: pro Projekt letzter Commit,
+- **M5** `[vorschlag]` **Projekt-Health-Übersicht** — gehört zwingend hierher, weil
+  Dashboards in Plane ein Pro-Feature sind: pro Projekt letzter Commit,
   offene Tasks, veraltete Dependencies, Runtime-EOL, SSL-Ablauf, letzte
   Backup-Prüfung. Zeigt, welcher Kunde Aufmerksamkeit braucht — statt es zu merken,
   wenn er anruft.
@@ -604,6 +608,32 @@ Weboberfläche) damit voraussichtlich überflüssig.
 - **Q19** `[vorschlag]` **Chat-Befehle ins Audit-Log** (H4): wer hat wann was per Chat
   ausgelöst. Bei einem Kanal, der Sessions starten kann, ist das die Mindestspur.
 
+
+## Abgrenzung: was Plane abdeckt
+
+Geprüft 2026-11-04 für die **Community Edition** (self-hosted, kostenlos). Begründet
+D12. Vorbehalt: die Edition-Details stammen teils aus Forum- und Drittquellen — vor
+der Installation auf plane.so/pricing gegenprüfen, die Tiers haben sich geändert.
+
+**Enthalten, nicht nachbauen:** Projekte · Work Items mit Rich-Text, Anhängen,
+Sub-Items und Beziehungen · Kommentare · Zuweisung · Labels · eigene States und
+Workflows · Cycles (Sprints mit Burn-down) · Modules (Features, Releases — deckt
+Milestones ab) · fünf Layouts inkl. Gantt und Kanban · unbegrenzte gefilterte Views ·
+Pages (Projekt-Wiki) · Intake in-app · einfache Estimates · Mitglieder und Rollen ·
+**REST API und Webhooks** (die Grundlage des Dispatchers). Keine Nutzergrenze — die
+oft zitierten 12 Seats gelten für Cloud Free, nicht für self-hosted.
+
+**Nicht enthalten (Pro, ~6 $/Seat) — drei davon betreffen diese Liste:**
+- **Wiederkehrende Work Items** → M1 ist dadurch notwendig, nicht optional
+- **Zeiterfassung** → H9 ebenso
+- **Dashboards** → M5 und L7 gehören damit zwingend in ClaudeDeck
+- Epics als eigene Ebene, Task-Templates (betrifft P2), Intake per Formular,
+  erweiterte Estimates
+
+**Was Plane grundsätzlich nicht leistet** und ClaudeDeck begründet: Terminal und
+Sessions, Server-Auslastung, Secrets und ihre Rechte, Archiv mit Reaktivierung,
+Skills- und Agent-Inventur, Transkripte, Deploy, Dateizugriff — elf der siebzehn
+Bereiche dieser Liste.
 
 ---
 
