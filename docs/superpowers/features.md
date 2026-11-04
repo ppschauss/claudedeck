@@ -246,8 +246,9 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   wartet auf Review, was ist heute fertig geworden. Sobald mehr als drei Tasks
   parallel laufen, ist die flache Liste zu wenig.
 
-- **H6** `[plan]` **Auslastungsanzeige** des Servers: CPU, RAM, Disk, Load, und wie
-  viele Sessions gerade laufen
+- **H6** `[plan]` **Auslastungsanzeige** des Servers: CPU, RAM, Disk, Load, Anzahl
+  laufender Sessions — als **permanent sichtbare Leiste**, nicht als Dialog, den man
+  erst öffnen muss. Farbcodiert ab definierten Schwellen.
 - **H7** `[vorschlag]` **Auslastung als Bremse, nicht nur als Anzeige.** Über einer
   Schwelle startet kein neuer Task, sondern wandert in die Warteschlange (D11). Eine
   Anzeige, die man ignoriert, verhindert keinen überladenen Server.
@@ -260,6 +261,13 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   echte Session-Zeit kennt nur ClaudeDeck, Plane sieht nur Status-Wechsel.
 - **H10** `[vorschlag]` **Token-Kosten je Task, Projekt und Monat.** Fällt mit dem
   Limit aus B14 zusammen — wer kappen will, muss ohnehin zählen.
+
+- **H11** `[vorschlag]` **Verbrauch pro Session** neben dem Gesamtwert: RAM, CPU,
+  Laufzeit je tmux-Session. „Server bei 90 %" sagt nichts — „`task-WEB-42` nimmt
+  6 GB" sagt, was zu killen ist. Das ist die Frage, die man bei Last tatsächlich hat.
+- **H12** `[vorschlag]` **Kurzer Verlauf statt Momentwert** (Sparkline über die letzten
+  Minuten). Bei 90 % ist der Unterschied zwischen „steigt" und „fällt gerade ab" die
+  ganze Information.
 
 ## I — Backend & Betrieb
 
@@ -346,6 +354,23 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   Handy läuft (H3), will man darauf reagieren können: Status sehen, Permission-Prompt
   beantworten, Task freigeben. Das ist der einzige Grund, der später doch eine
   HTTPS-API rechtfertigt — dann aber additiv neben SSH, nicht als Ersatz.
+
+- **K7** `[plan]` **Inventur je Server**: welche Skills, Agents, Slash-Commands,
+  MCP-Connectors und Plugins dort installiert sind. `catalog/` scannt Commands und
+  Connectors bereits (K1) — Skills (`~/.claude/skills/`, `.claude/skills/`) und Agents
+  sind dieselbe Mechanik.
+- **K8** `[vorschlag]` **Abgleich über alle Server.** Das eigentliche Problem ist nicht
+  die Liste, sondern der Drift: Server A hat einen Skill, B nicht, derselbe Task
+  verhält sich unterschiedlich und man sucht den Fehler im Code. Anzeigen, was wo
+  fehlt, plus Sync-Knopf. Relevant ab dem zweiten Verbindungsprofil (A3).
+- **K9** `[vorschlag]` **Claude-Code-Version je Server sichtbar.** `claude_invocation`
+  baut `--model` und `--effort` in den Startbefehl; fehlt ein Flag in einer älteren
+  Version, scheitert der Session-Start mit einer Meldung, die nicht nach einer
+  Versionsdifferenz aussieht. Sichtbare Version erspart die Suche in tmux und SSH.
+- **K10** `[vorschlag]` **Soll-Ist-Abgleich je Projekt.** Das Projekt-`CLAUDE.md`
+  deklariert, welche Skills und MCP-Connectors es braucht; beim Session-Start wird
+  geprüft, ob sie auf diesem Server vorhanden sind. Verhindert Tasks, die scheitern,
+  weil ein Connector fehlt — was ohne K5 stumm passiert.
 
 ## L — Bedienung & Navigation (QoL)
 
