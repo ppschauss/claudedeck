@@ -40,9 +40,11 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 
 - **A9** `[plan]` **Credentials-Bereich** in der Oberfläche: SSH-Zugänge und Tokens
   zentral verwalten. Ablage serverseitig (I1), Werte nie zum Client.
-- **A10** `[plan]` **Rechte/Scopes je Zugang anzeigen.** Nur teilweise automatisch
-  ermittelbar — das Feld braucht einen Herkunftsmarker und ein Prüfdatum, sonst zeigt
-  es irgendwann Fiktion:
+- **A10** `[plan]` **Rechte/Scopes je Zugang anzeigen — immer manuell eintragbar**,
+  automatische Ermittlung wo möglich als Komfort obendrauf. Jeder Eintrag trägt einen
+  Herkunftsmarker (manuell / abgefragt) und ein Prüfdatum, sonst zeigt das Feld
+  irgendwann Fiktion. Freitext zusätzlich, für Dinge wie „nur Repo X" oder „darf nicht
+  löschen", die kein Scope-Modell abbildet:
   - GitHub **classic** PAT: Scopes stehen im `X-OAuth-Scopes`-Response-Header → automatisch
   - GitHub **fine-grained** PAT: liefert diesen Header nicht. `X-Accepted-GitHub-Permissions`
     sagt nur, was der *Endpoint verlangt*, nicht was der Token *hat*. Keine API für die
@@ -123,6 +125,18 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 - **C9** `[vorschlag]` **Projekt archivieren**: Session beenden, Worktrees aufräumen,
   Ordner markieren, aus „startbar" ausblenden. Sonst wächst die Sidebar unbegrenzt.
 
+- **C10** `[vorschlag]` **Herkunfts-Index über alle Projekte.** Die `CLAUDE.md`-Regel
+  „kopiere es hierher und führe eine Historie" (C3) erzeugt Kopien und damit Drift:
+  Ein Bugfix in Projekt A erreicht B und C nicht, weil niemand weiß, dass sie dieselbe
+  Kopie tragen. Ein Index aus den Historie-Einträgen beantwortet beide Richtungen —
+  „woher kam das" und „wer benutzt es noch". Das ist die tragfähige Einlösung der
+  Querverlinkung; `@`-Imports allein leisten sie nicht.
+- **C11** `[vorschlag]` **Projekt-Vorlagen** (WordPress, PHP-Tool, statische Seite):
+  vorgefertigte `CLAUDE.md`, `SECRETS.md`, `.gitignore`, pre-commit-Hooks,
+  `allowedTools`-Profil. C2 legt *ein* Projekt an, das legt den *richtigen* an.
+- **C12** `[vorschlag]` **Read-only-Projekte.** Session darf lesen und analysieren,
+  aber nichts schreiben — für Audits und Recherche in fremdem Kundencode. Ergänzt C6.
+
 ## D — Aufgaben & Plane-Anbindung
 
 - **D1** `[plan]` Dispatcher: Plane-Webhook → Session im Projektpfad starten
@@ -150,6 +164,12 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
 - **D12** `[nein]` **PM-Funktionen nachbauen** (Terminierung, Kommentare, Zuweisung,
   Team, Notifications, Milestones). Das ist vollständig Plane; Milestones heißen
   dort Cycles/Modules. Nachbauen = Plane in Rust neu schreiben.
+
+- **B19** `[vorschlag]` **Kill-Switch**: alle Sessions auf einmal stoppen. Bei einer
+  entgleisten Session will man einen Knopf, nicht acht Terminals durchklicken.
+- **B20** `[vorschlag]` Session umbenennen aus der Oberfläche, ohne tmux-Kommando
+- **B21** `[vorschlag]` Terminal-Ausgabe als Datei exportieren — zum Weitergeben eines
+  Fehlers, ohne aus dem Scrollback zu kopieren
 
 ## E — Secrets & Tokens
 
@@ -224,6 +244,15 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   Schwelle startet kein neuer Task, sondern wandert in die Warteschlange (D11). Eine
   Anzeige, die man ignoriert, verhindert keinen überladenen Server.
 
+- **H8** `[vorschlag]` **Watchdog für sensible Pfade.** Ändert eine Session
+  `wp-config.php`, `.env`, `.htaccess`, `composer.json`, `package.json` oder etwas
+  unter `.github/workflows/`, kommt sofort ein Hinweis — unabhängig vom Task-Ende.
+  Kurze Liste, und genau die Dateien, bei denen ein stiller Fehler teuer wird.
+- **H9** `[vorschlag]` **Laufzeit je Task** erfassen. Für die Kundenabrechnung: die
+  echte Session-Zeit kennt nur ClaudeDeck, Plane sieht nur Status-Wechsel.
+- **H10** `[vorschlag]` **Token-Kosten je Task, Projekt und Monat.** Fällt mit dem
+  Limit aus B14 zusammen — wer kappen will, muss ohnehin zählen.
+
 ## I — Backend & Betrieb
 
 - **I1** `[plan]` `crates/claudedeck-backend`: Config, Profile, Projekt-Metadaten,
@@ -258,7 +287,7 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   deckt Drive, OneDrive, SharePoint, Nextcloud, S3, SFTP und externe Datenträger ab;
   jeweils eigene APIs und OAuth-Flows zu bauen wäre ein Projekt für sich. Die
   rclone-Config enthält Tokens → gehört serverseitig und verschlüsselt.
-- **J4** `[nein]` **iCloud als Archivziel.** rclone hat das Backend seit v1.69, aber
+- **J4** `[nein]` **iCloud als Archivziel** — abgesagt 2026-11-04. rclone hat das Backend seit v1.69, aber
   der Trust-Token läuft nach 30 Tagen ab und braucht dann erneut 2FA von Hand,
   App-spezifische Passwörter werden abgelehnt, und Advanced Data Protection muss
   ausgeschaltet sein — ein Sicherheits-Downgrade des gesamten Apple-Kontos für ein
@@ -304,6 +333,54 @@ Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
   die Session wirkt nur unerklärlich unfähig.
 - **K6** `[vorschlag]` **Permission-Prompts in der Oberfläche beantworten** statt im
   Terminal zu suchen, welche von acht Sessions gerade fragt. Direkte Ergänzung zu B12.
+
+- **I9** `[vorschlag]` **Read-only-Weboberfläche für unterwegs.** Sobald Push aufs
+  Handy läuft (H3), will man darauf reagieren können: Status sehen, Permission-Prompt
+  beantworten, Task freigeben. Das ist der einzige Grund, der später doch eine
+  HTTPS-API rechtfertigt — dann aber additiv neben SSH, nicht als Ersatz.
+
+## L — Bedienung & Navigation (QoL)
+
+- **L1** `[vorschlag]` **Command Palette** (Strg+K): Projekt wechseln, Session öffnen,
+  Task anlegen, Archiv suchen — alles über eine Eingabe. Ab etwa 15 Projekten ist
+  Klicken verloren.
+- **L2** `[vorschlag]` **Globale Suche** über Transkripte (B13), Projekte,
+  Wissensbasis und Archiv-Manifeste. „Wie habe ich das damals gelöst" ist die
+  häufigste Frage an so ein System und derzeit unbeantwortbar.
+- **L3** `[vorschlag]` Hotkeys für den Sessionwechsel (Strg+1…9)
+- **L4** `[vorschlag]` **Mini-Preview in der Sidebar**: die letzten zwei Zeilen je
+  Session. Bei acht parallelen Sessions sieht man ohne Klick, welche arbeitet und
+  welche wartet. Billig, weil der Output ohnehin durchläuft.
+- **L5** `[vorschlag]` **Split-View**: zwei Sessions gleichzeitig sichtbar. Beim
+  Vergleichen zweier Tasks oder Terminal neben Diff.
+- **L6** `[vorschlag]` **Notizfeld je Projekt und Session**, serverseitig. „Hier war
+  ich stehengeblieben" — das, was man sonst in eine Textdatei schreibt und verliert.
+- **L7** `[vorschlag]` **Tagesstart-Ansicht**: was nachts gelaufen ist, was auf Review
+  wartet, was hängt, was heute fertig wurde. Bei „Rechner zu, Arbeit läuft" ist das
+  die erste Ansicht, die man morgens braucht. Konkretisiert H5.
+
+## M — Wartung & Wiederkehrendes
+
+Der Loop reagiert auf Tasks. Dieser Bereich **erzeugt** sie — wiederkehrende Arbeit,
+die bei Kundenbetreuung den größeren Teil ausmacht und gerade deshalb vergessen wird.
+Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
+
+- **M1** `[vorschlag]` **Geplante Tasks pro Projekt**: WordPress-Core- und
+  Plugin-Updates prüfen, Backup-Verifikation, Broken Links, Core Web Vitals. Ergebnis
+  als Plane-Task mit Befund, nicht als stiller Cron-Lauf.
+- **M2** `[vorschlag]` **Ablauf-Überwachung**: SSL-Zertifikate, Domains, API-Tokens
+  (A11). Alles mit Datum, das unbemerkt verfällt und dann am Wochenende auffällt.
+- **M3** `[vorschlag]` **Dependency- und CVE-Prüfung** je Projekt (`composer audit`,
+  `npm audit`, WordPress-Plugin-Schwachstellen). Befund als Task, nicht als Mail,
+  die man wegklickt.
+- **M4** `[vorschlag]` **PHP-/Runtime-EOL-Warnung**: welches Projekt läuft auf einer
+  Version, die aus der Sicherheitswartung fällt. Mit Vorlauf, nicht am Stichtag.
+- **M5** `[vorschlag]` **Projekt-Health-Übersicht**: pro Projekt letzter Commit,
+  offene Tasks, veraltete Dependencies, Runtime-EOL, SSL-Ablauf, letzte
+  Backup-Prüfung. Zeigt, welcher Kunde Aufmerksamkeit braucht — statt es zu merken,
+  wenn er anruft.
+- **M6** `[vorschlag]` **Wartungsbericht je Kunde**, monatlich, aus M1–M5. Was geprüft,
+  was gefunden, was behoben wurde. Belegt Arbeit, die sonst unsichtbar bleibt.
 
 ---
 
