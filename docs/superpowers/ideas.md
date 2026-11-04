@@ -4,6 +4,49 @@ Stand 2026-11-04. Sortiert nach „blockiert den Loop" / „danach" / „nicht b
 Der Loop = Plane-Task auf „Todo" → Dispatcher startet tmux-Session mit Claude im
 Projektpfad → ClaudeDeck zeigt sie. Alles andere ist Komfort.
 
+## Architektur: zweigeteilt, Client speichert nichts
+
+Entschieden: Backend auf dem Server haelt alle Daten, das Programm ist Schluessel +
+visuelle Oberflaeche. Uebertragung verschluesselt.
+
+**Transport bleibt SSH**, keine eigene API. Begruendung:
+- Verschluesselung, Auth und Host-Key-Verifikation sind vorhanden und erprobt
+  (`ssh/connection.rs`, `ssh/hostkey.rs`). Eine eigene TLS-API braeuchte all das neu.
+- Kein offener Port ausser 22, keine Zertifikatsverwaltung, kein selbstgebautes
+  Token-System — letzteres waere die riskanteste Komponente im Konstrukt.
+- SSH-Key-Auth *ist* das Konzept „das Programm ist der Schluessel". Key auf Stick
+  oder YubiKey, dann ist das Geraet tatsaechlich leer.
+- Eine HTTPS/WebSocket-API lohnt erst fuer Browser- oder Mobile-Clients. Additiv,
+  nicht jetzt.
+
+**Server** — `crates/claudedeck-backend`, neues Crate:
+- Config, Profile, Projekt-Metadaten, Secrets-*Referenzen* (Ablage unter
+  `/var/lib/claudedeck/`)
+- Dispatcher (Plane-Webhooks)
+- antwortet auf JSON-Kommandos ueber den SSH-Kanal, statt dass der Client
+  `tmux list-sessions` parst
+
+**Client** — ClaudeDeck:
+- Login, Terminal-Rendering, UI
+- `get_config` holt vom Server statt von Platte
+- `keyring`-Dependency raus, `config_path()`/`save_to()` raus
+
+**Umbaugroesse**: `config::load_from(&config::config_path())` an 5 Stellen, alle in
+`src-tauri/src/commands/`. Das `Config`-Struct selbst ist transport-frei und bleibt
+unveraendert — Transport-Tausch, kein Rewrite.
+
+**Was zwangsläufig lokal bleibt** (keine Projektdaten, keine Secrets):
+1. Host/Port des Servers — ohne das kein Start.
+2. Der SSH-Private-Key bei Key-Auth. Auf externem Medium haltbar.
+3. Der Host-Key-Fingerprint. Bewusst gespeichert: die Alternative waere Bestaetigen
+   bei jedem Start, was zu Blind-Wegklicken fuehrt und real schlechter gegen MITM
+   schuetzt als eine gespeicherte Zeile.
+
+**Offene Annahme**: „sofern da keine Arbeitsumgebung hinterlegt ist" = zwei Modi,
+Remote (nichts lokal ausser den drei Punkten) und Lokal (Projekt liegt auf dem Geraet,
+dortige Ablage erlaubt). Entscheidet, ob `config.rs` zwei Backends braucht oder eines.
+
+
 ## Blockiert den Loop
 
 ### Projekt-Anlage als Script
@@ -49,6 +92,12 @@ Inhalt sinngemäß:
 - Historie als `## Historie`-Abschnitt, neueste Einträge oben, mit Datum.
 - Secrets: siehe `SECRETS.md`. Werte niemals in Dateien, Logs oder Historie.
 
+### Key-Auth (vom Nice-to-have zum Kernfeature)
+Offener Punkt aus dem README, durch die Client-Architektur jetzt zentral: Key-Auth ist
+der Mechanismus, mit dem das Programm „der Schluessel" ist. `AuthMethod` existiert in
+`config.rs`, `connection.rs:98` liest `key_path` schon aus der Config.
+
+
 ## Danach, als Plane-Issue
 
 - **`@plane_issue` durchziehen** (M10): tmux user-option beim Start setzen, in
@@ -57,7 +106,6 @@ Inhalt sinngemäß:
   irgendwann ein `|`), der kommt aus der Plane-API.
 - **Sidebar-Gruppe „Aufgaben"** als vierte Gruppe. `SidebarGroup` existiert.
 - **Rückkanal** (M12): Session endet → Issue auf „Done", PR-Link als Kommentar.
-- **Key-Auth** — offener Punkt aus dem README, unabhängig vom Loop.
 - **Claude-Funktionen visuell**: `catalog/` scannt Slash-Commands und MCP-Connectors
   bereits. Was darüber hinaus wirklich fehlt, zeigt sich erst nach ein paar Wochen
   Benutzen — bis dahin nicht spekulieren.
@@ -72,10 +120,11 @@ Inhalt sinngemäß:
   Milestones). Das ist vollständig Plane; Milestones = Cycles/Modules. Nachbauen heißt
   Plane in Rust neu schreiben und ist der einzige Weg, dieses Projekt zum Scheitern zu
   bringen. ClaudeDeck = Terminal-Monitor. Plane = PM. Dispatcher = Klebstoff.
-- **Vaultwarden als Ersatz für den Windows-Credential-Store.** `NamedProfile`,
-  `AuthMethod`, `has_secret`/`delete_secret` und mehrere Verbindungsprofile sind seit
-  `d330c05` drin; DPAPI ist für einen Windows-Client OS-gebunden und besser. Nur
-  interessant, falls dieselben Profile auf mehreren Rechnern synchron sein sollen.
+- ~~**Vaultwarden als Ersatz fuer den Windows-Credential-Store.**~~ **Revidiert
+  2026-11-04**: Mit „Client speichert nichts" ist die lokale DPAPI-Speicherung der
+  Gegenentwurf, nicht die Loesung. Wird ein Rueckbau — `keyring` raus, Profile und
+  Secrets-Referenzen wandern auf den Server. Die `NamedProfile`/`AuthMethod`-Modelle
+  bleiben nutzbar, nur ihre Ablage wechselt.
 - **Vaultwarden für den unattended Dispatcher.** API-Key-Login lässt das Vault gesperrt,
   es braucht ein `BW_SESSION`, und ein zweites `bw unlock` invalidiert die erste Session.
   Dauerhaft entsperrtes Vault auf einem Daemon = wer den Server hat, hat alle Secrets.
