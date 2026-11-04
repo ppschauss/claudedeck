@@ -104,6 +104,9 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **B3** `[da]` Session im Projektordner starten („+ startbar")
 - **B4** `[da]` Model/Effort pro Session wählen (`claude_invocation`, Befehls-Panel)
 - **B5** `[da]` Statusicon je Session: arbeitet / fertig / verloren
+- **B5a** `[plan]` **Vierter Status: wartet auf Freigabe.** Beim Zeichnen der Mockups
+  aufgefallen — eine Session im Permission-Prompt ist weder „arbeitet" noch „fertig",
+  und genau sie braucht Aufmerksamkeit. Gehört in Sidebar, Übersicht und Chat-Meldung.
 - **B6** `[da]` Badge-Zähler + Desktop-Notification bei Output in inaktiver Session
 - **B7** `[da]` Scrollback durchsuchen (Strg+F)
 - **B8** `[da]` Terminal-Themes und Darstellungsoptionen
@@ -262,9 +265,10 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **G1** `[da]` SFTP-Ablage lesend: Verzeichnis listen, Vorschau, Download
 - **G2** `[teil]` SFTP schreibend / Upload — offener M6-Punkt
 - **G3** `[da]` Bildvorschau im Ablage-Panel
-- **G4** `[plan]` **Diff-Ansicht für den aktuellen Task**: `git diff` des
-  Worktrees im Panel, statt im Terminal zu scrollen. Das ist der Blick, den man beim
-  Review tatsächlich braucht.
+- **G4** `[plan]` **Diff-Ansicht für den aktuellen Task**: `git diff` des Worktrees,
+  statt im Terminal zu scrollen. **Steht hier falsch** (Mockup-Befund): der Moment, in
+  dem man einen Diff will, ist das Review eines fertigen Tasks — der Einstieg gehört in
+  den Tagesstart (L7) und an die PR-Zeile, nicht ins Dateipanel.
 
 - **G5** `[plan]` Upload per Drag & Drop, sobald G2 steht
 - **G6** `[plan]` Pfad-Lesezeichen je Projekt (`uploads/`, `logs/`) — erspart
@@ -413,7 +417,10 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   nötig). Ein nicht verbundener Connector scheitert sonst stumm mitten im Task, und
   die Session wirkt nur unerklärlich unfähig.
 - **K6** `[plan]` **Permission-Prompts in der Oberfläche beantworten** statt im
-  Terminal zu suchen, welche von acht Sessions gerade fragt. Direkte Ergänzung zu B12.
+  Terminal zu suchen, welche von acht Sessions gerade fragt. **Voraussetzung von B12,
+  nicht Ergänzung** (Mockup-Befund): braucht ein echtes Antwortfeld mit den Optionen
+  des Prompts — ein Knopf, der ins Terminal springt, ist der Umweg, den man vermeiden
+  wollte.
 
 - **K7** `[plan]` **Inventur je Server**: welche Skills, Agents, Slash-Commands,
   MCP-Connectors und Plugins dort installiert sind. `catalog/` scannt Commands und
