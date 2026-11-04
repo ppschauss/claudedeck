@@ -11,7 +11,7 @@ anhängen.
 - `[teil]` — Teile im Code, nicht fertig
 - `[umbau]` — existiert, muss durch die Client-Server-Architektur geändert werden
 - `[plan]` — beschlossen, noch nicht gebaut
-- `[vorschlag]` — von mir, nicht von dir; Zu-/Absage offen
+- `[plan]` — von mir, nicht von dir; Zu-/Absage offen
 - `[nein]` — bewusst verworfen, Begründung dabei
 
 Architektur und Scope-Sortierung: siehe [`ideas.md`](ideas.md).
@@ -70,9 +70,9 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   *ist* der Schlüssel, auf Stick/YubiKey haltbar.
 - **A6** `[da]` Auto-Reconnect nach Verbindungsverlust, Sessions bleiben erhalten
   (`reconnect_supervisor.rs`, `termPool.ts`)
-- **A7** `[vorschlag]` **2FA für den Login** via SSH-Key + TOTP (`pam_oath`)
+- **A7** `[plan]` **2FA für den Login** via SSH-Key + TOTP (`pam_oath`)
   serverseitig. Relevant, sobald der Server von außen erreichbar ist.
-- **A8** `[vorschlag]` **Verbindung über Tailscale/WireGuard** statt Port 22 öffentlich.
+- **A8** `[plan]` **Verbindung über Tailscale/WireGuard** statt Port 22 öffentlich.
   Kein offener Port im Internet, kein Brute-Force-Vektor, Fail2Ban erübrigt sich
   weitgehend. Empfehlung, falls der Server nicht im LAN steht.
 
@@ -90,10 +90,10 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   - Plane-API-Key: kein Scope-Konzept, immer workspace-weit → festes Feld
   - SSH-Key: hat selbst keine Rechte. Relevant sind die `authorized_keys`-Optionen und
     die Unix-Rechte des Users → `sudo -l` und Gruppenzugehörigkeit abfragen
-- **A11** `[vorschlag]` **Ablaufdatum und Rotationshinweis je Zugang.** GitHub-PATs
+- **A11** `[plan]` **Ablaufdatum und Rotationshinweis je Zugang.** GitHub-PATs
   laufen ab, iCloud-Trust-Token nach 30 Tagen. Ein abgelaufener Token in einer
   unbeaufsichtigten Session äußert sich als rätselhafter Fehler mitten im Task.
-- **A12** `[vorschlag]` **„Letzter erfolgreicher Einsatz" je Zugang.** Findet toten
+- **A12** `[plan]` **„Letzter erfolgreicher Einsatz" je Zugang.** Findet toten
   Ballast — Tokens, die noch Rechte haben, aber niemand mehr braucht.
 
 ## B — Sessions & Terminal
@@ -112,20 +112,20 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   aber ein Kernargument der Architektur: Rechner zu, Arbeit läuft
 - **B11** `[plan]` Aufgaben-Sessions in eigenem `git worktree` je Task, damit
   parallele Sessions sich nicht gegenseitig überschreiben
-- **B12** `[vorschlag]` **Hängende Session erkennen.** Claude wartet auf eine Eingabe
+- **B12** `[plan]` **Hängende Session erkennen.** Claude wartet auf eine Eingabe
   (meist ein Permission-Prompt) → Session steht unbemerkt still. Die Erkennung
   existiert fast schon: `lastOutputAt` ohne neuen Output + Prozess lebt = wartet.
   Nach N Minuten Notification und Kommentar am Plane-Task. Das ist das häufigste
   reale Problem bei unbeaufsichtigten Sessions.
-- **B13** `[vorschlag]` **Transkript serverseitig mitschreiben.** tmux-Scrollback ist
+- **B13** `[plan]` **Transkript serverseitig mitschreiben.** tmux-Scrollback ist
   begrenzt, nach Session-Ende ist der Verlauf weg. `claude --output-format
   stream-json` parallel in eine Datei → nachvollziehbar, und die Projekt-Historie
   (C4) kann daraus gespeist werden statt aus Claudes Gedächtnis.
-- **B14** `[vorschlag]` **Laufzeit-/Turn-Limit pro Task mit hartem Kill.** Autonome
+- **B14** `[plan]` **Laufzeit-/Turn-Limit pro Task mit hartem Kill.** Autonome
   Sessions aus Plane verbrauchen Tokens ohne Aufsicht; eine Session in einer Schleife
   läuft sonst bis zum Limit. Pro Projekt konfigurierbar. Das baut man sonst nach der
   ersten Rechnung.
-- **B15** `[vorschlag]` **Rate-Limit-Erkennung.** Läuft die Session gegen ein
+- **B15** `[plan]` **Rate-Limit-Erkennung.** Läuft die Session gegen ein
   Nutzungslimit, soll sie den Plane-Task zurück auf „Todo" legen und das vermerken,
   statt stillzustehen und als „in Arbeit" zu gelten.
 
@@ -133,15 +133,15 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   dem Server. Wichtig: als normale tmux-Session (`console`) anlegen, nicht als
   Sonderweg — sonst greifen Auto-Reconnect (A6) und „läuft weiter, wenn der Client
   zugeht" (B10) nicht.
-- **B17** `[vorschlag]` Mehrere benannte Konsolen statt einer. Kostet fast nichts,
+- **B17** `[plan]` Mehrere benannte Konsolen statt einer. Kostet fast nichts,
   weil es dieselbe Mechanik ist, und eine Konsole ist immer zu wenig.
 - **B18** `[plan]` **Session-Übersicht aktiv/inaktiv + Session-Archiv pro Projekt.**
   Das Archiv sind die mitgeschriebenen Transkripte — setzt B13 voraus, sonst ist nach
   Session-Ende nichts mehr da, was man archivieren könnte.
-- **B19** `[vorschlag]` **Kill-Switch**: alle Sessions auf einmal stoppen. Bei einer
+- **B19** `[plan]` **Kill-Switch**: alle Sessions auf einmal stoppen. Bei einer
   entgleisten Session will man einen Knopf, nicht acht Terminals durchklicken.
-- **B20** `[vorschlag]` Session umbenennen aus der Oberfläche, ohne tmux-Kommando
-- **B21** `[vorschlag]` Terminal-Ausgabe als Datei exportieren — zum Weitergeben eines
+- **B20** `[plan]` Session umbenennen aus der Oberfläche, ohne tmux-Kommando
+- **B21** `[plan]` Terminal-Ausgabe als Datei exportieren — zum Weitergeben eines
   Fehlers, ohne aus dem Scrollback zu kopieren
 
 ## C — Projekte
@@ -155,29 +155,29 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   (im Worktree sonst beim Merge verloren), Historie führen
 - **C4** `[plan]` Projekt-Historie als Abschnitt in `CLAUDE.md`, neueste oben, mit Datum
 - **C5** `[plan]` Neue Aufgabe → neue Session im Projektpfad (via B11 im Worktree)
-- **C6** `[vorschlag]` **Permission-Modus und `allowedTools` pro Projekt**, nicht global.
+- **C6** `[plan]` **Permission-Modus und `allowedTools` pro Projekt**, nicht global.
   Ein Kundenprojekt mit Live-Zugängen darf nicht denselben Bash-Vollzugriff haben wie
   ein Spielprojekt. Liegt in der Server-Config, wird beim Session-Start gesetzt.
   Direkt sicherheitsrelevant.
-- **C7** `[vorschlag]` **Review-Gate: kein Push auf den Hauptbranch.** Autonome Session
+- **C7** `[plan]` **Review-Gate: kein Push auf den Hauptbranch.** Autonome Session
   arbeitet im Worktree auf `task/<ISSUE>`, Ergebnis ist immer ein PR. Branch-Protection
   serverseitig. Ohne das schreibt Claude unbeobachtet in Kundenprojekte.
-- **C8** `[vorschlag]` **Projektübergreifende Suche** über alle Projekte und die
+- **C8** `[plan]` **Projektübergreifende Suche** über alle Projekte und die
   Wissensbasis. Das ist die praktische Einlösung der „Querverlinkung" — ohne Suche
   bleibt sie eine Sammlung von `@`-Imports, die den Kontext flutet.
-- **C9** `[vorschlag]` **Projekt archivieren**: Session beenden, Worktrees aufräumen,
+- **C9** `[plan]` **Projekt archivieren**: Session beenden, Worktrees aufräumen,
   Ordner markieren, aus „startbar" ausblenden. Sonst wächst die Sidebar unbegrenzt.
 
-- **C10** `[vorschlag]` **Herkunfts-Index über alle Projekte.** Die `CLAUDE.md`-Regel
+- **C10** `[plan]` **Herkunfts-Index über alle Projekte.** Die `CLAUDE.md`-Regel
   „kopiere es hierher und führe eine Historie" (C3) erzeugt Kopien und damit Drift:
   Ein Bugfix in Projekt A erreicht B und C nicht, weil niemand weiß, dass sie dieselbe
   Kopie tragen. Ein Index aus den Historie-Einträgen beantwortet beide Richtungen —
   „woher kam das" und „wer benutzt es noch". Das ist die tragfähige Einlösung der
   Querverlinkung; `@`-Imports allein leisten sie nicht.
-- **C11** `[vorschlag]` **Projekt-Vorlagen** (WordPress, PHP-Tool, statische Seite):
+- **C11** `[plan]` **Projekt-Vorlagen** (WordPress, PHP-Tool, statische Seite):
   vorgefertigte `CLAUDE.md`, `SECRETS.md`, `.gitignore`, pre-commit-Hooks,
   `allowedTools`-Profil. C2 legt *ein* Projekt an, das legt den *richtigen* an.
-- **C12** `[vorschlag]` **Read-only-Projekte.** Session darf lesen und analysieren,
+- **C12** `[plan]` **Read-only-Projekte.** Session darf lesen und analysieren,
   aber nichts schreiben — für Audits und Recherche in fremdem Kundencode. Ergänzt C6.
 
 ## D — Aufgaben & Plane-Anbindung
@@ -199,13 +199,13 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   mitlesen; Issue-ID ist separatorfrei, der **Titel** darf nie ins Format-String
 - **D7** `[plan]` Sidebar-Gruppe „Aufgaben" als vierte Gruppe
 - **D8** `[plan]` Rückkanal: Session endet → Plane-Task auf „Done", PR-Link als Kommentar
-- **D9** `[vorschlag]` **Plan-First-Modus über Plane-Label.** Label `auto` = sofort
+- **D9** `[plan]` **Plan-First-Modus über Plane-Label.** Label `auto` = sofort
   arbeiten; Label `plan-first` = erst Plan als Plane-Kommentar, dann auf Freigabe
   warten. Für teure oder riskante Tasks, ohne zwei Systeme zu brauchen.
-- **D10** `[vorschlag]` **Fortschritt als Plane-Kommentar** statt nur im Terminal:
+- **D10** `[plan]` **Fortschritt als Plane-Kommentar** statt nur im Terminal:
   Start, Plan, Commit, PR, Ende. Damit ist der Task auch ohne ClaudeDeck lesbar —
   vom Handy, unterwegs.
-- **D11** `[vorschlag]` **Parallelitäts-Limit**, global und pro Projekt. Fünf
+- **D11** `[plan]` **Parallelitäts-Limit**, global und pro Projekt. Fünf
   gleichzeitige Sessions auf einem Homelab-Server heißt fünf Claude-Prozesse plus
   Builds. Eine Warteschlange ist billiger als ein überladener Server.
 - **D12** `[nein]` **PM-Funktionen nachbauen** (Terminierung, Kommentare, Zuweisung,
@@ -225,13 +225,13 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   erste Session, und ein dauerhaft entsperrtes Vault auf einem Daemon heißt: wer den
   Server hat, hat alles. Machine Accounts gibt es nur im Bitwarden Secrets Manager,
   den Vaultwarden nicht implementiert.
-- **E5** `[vorschlag]` **Secret-Leak-Scan vor jedem Commit** (`gitleaks` als
+- **E5** `[plan]` **Secret-Leak-Scan vor jedem Commit** (`gitleaks` als
   pre-commit-Hook im Projekt-Template). Eine autonome Session kann einen Wert in eine
   Datei schreiben, ohne es zu melden. Realer Vektor, billige Absicherung.
-- **E6** `[vorschlag]` **`SECRETS.md` gegen die Realität prüfen**: Eintrag ohne
+- **E6** `[plan]` **`SECRETS.md` gegen die Realität prüfen**: Eintrag ohne
   Verwendung im Code und Verwendung ohne Eintrag beide melden. Hält das Manifest
   ehrlich, sonst verrottet es binnen Wochen.
-- **E7** `[vorschlag]` **Secrets nie in die Session-Umgebung**, sondern erst im
+- **E7** `[plan]` **Secrets nie in die Session-Umgebung**, sondern erst im
   Deploy-Schritt mit Mensch davor. Claude braucht die Werte fast nie — er braucht
   „welches Secret, wo benutzt, wie geholt".
 
@@ -243,17 +243,17 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **F3** `[plan]` Projektspezifische Fragmente per Import im Projekt-`CLAUDE.md`
 - **F4** `[plan]` Ab ~20 Dateien auf einen MCP-Server über die Wissensbasis umstellen —
   `@`-Imports landen in *jedem* Prompt und fluten den Kontext
-- **F5** `[vorschlag]` **Wiederkehrende Abläufe als Skills** (`~/.claude/skills/`)
+- **F5** `[plan]` **Wiederkehrende Abläufe als Skills** (`~/.claude/skills/`)
   statt als MD-Text. Werden nur bei Bedarf geladen, kosten im Normalfall nichts.
-- **F6** `[vorschlag]` **ADRs in `decisions/`**: Entscheidungen wie „SSH statt eigener
+- **F6** `[plan]` **ADRs in `decisions/`**: Entscheidungen wie „SSH statt eigener
   API" oder „Worktree pro Task" mit Begründung festhalten. In sechs Monaten ist sonst
   unklar, warum etwas so ist, und es wird versehentlich zurückgedreht.
 
-- **F7** `[vorschlag]` **Wissens-Rückfluss nach jedem Task.** Die Session schlägt einen
+- **F7** `[plan]` **Wissens-Rückfluss nach jedem Task.** Die Session schlägt einen
   Eintrag für `/srv/knowledge/` vor, du bestätigst oder verwirfst. Ohne das bleibt die
   Wissensbasis auf dem Stand des Tages, an dem sie angelegt wurde — Pflege ist immer
   der unwichtigste Punkt des Tages.
-- **F8** `[vorschlag]` **Fehler-Datenbank**: „dieser Fehler trat schon einmal auf,
+- **F8** `[plan]` **Fehler-Datenbank**: „dieser Fehler trat schon einmal auf,
   Lösung war X", projektübergreifend. Bei mehreren Kundensystemen auf demselben Stack
   wiederholen sich Fehler, und die Lösung steckt derzeit nur in einem alten Terminal.
 
@@ -262,12 +262,12 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **G1** `[da]` SFTP-Ablage lesend: Verzeichnis listen, Vorschau, Download
 - **G2** `[teil]` SFTP schreibend / Upload — offener M6-Punkt
 - **G3** `[da]` Bildvorschau im Ablage-Panel
-- **G4** `[vorschlag]` **Diff-Ansicht für den aktuellen Task**: `git diff` des
+- **G4** `[plan]` **Diff-Ansicht für den aktuellen Task**: `git diff` des
   Worktrees im Panel, statt im Terminal zu scrollen. Das ist der Blick, den man beim
   Review tatsächlich braucht.
 
-- **G5** `[vorschlag]` Upload per Drag & Drop, sobald G2 steht
-- **G6** `[vorschlag]` Pfad-Lesezeichen je Projekt (`uploads/`, `logs/`) — erspart
+- **G5** `[plan]` Upload per Drag & Drop, sobald G2 steht
+- **G6** `[plan]` Pfad-Lesezeichen je Projekt (`uploads/`, `logs/`) — erspart
   das Durchklicken bei jedem Öffnen
 
 ## H — Beobachtung & Benachrichtigung
@@ -276,39 +276,39 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   abschaltbar
 - **H2** `[da]` Notification-Entprellung (ein Hinweis pro Wartezyklus,
   `notifyScheduler`)
-- **H3** `[vorschlag]` **Push aufs Handy über ntfy** (self-hosted, EU, kein
+- **H3** `[plan]` **Push aufs Handy über ntfy** (self-hosted, EU, kein
   Google/Apple-Push-Dienst nötig). Für „Task hängt" (B12) und „Task fertig" ist der
   Desktop-Hinweis nutzlos, wenn der Rechner zu ist — was bei dieser Architektur der
   Normalfall ist.
-- **H4** `[vorschlag]` **Serverseitiges Audit-Log**: welche Session, welcher Task,
+- **H4** `[plan]` **Serverseitiges Audit-Log**: welche Session, welcher Task,
   welche Dateien, welche Laufzeit, welches Ergebnis. Für Nachvollziehbarkeit bei
   Kundenprojekten und zum Debuggen. Aufbewahrungsfrist bewusst festlegen, nicht
   unbegrenzt.
-- **H5** `[vorschlag]` **Übersicht statt Sessionliste**: was läuft, was hängt, was
+- **H5** `[plan]` **Übersicht statt Sessionliste**: was läuft, was hängt, was
   wartet auf Review, was ist heute fertig geworden. Sobald mehr als drei Tasks
   parallel laufen, ist die flache Liste zu wenig.
 
 - **H6** `[plan]` **Auslastungsanzeige** des Servers: CPU, RAM, Disk, Load, Anzahl
   laufender Sessions — als **permanent sichtbare Leiste**, nicht als Dialog, den man
   erst öffnen muss. Farbcodiert ab definierten Schwellen.
-- **H7** `[vorschlag]` **Auslastung als Bremse, nicht nur als Anzeige.** Über einer
+- **H7** `[plan]` **Auslastung als Bremse, nicht nur als Anzeige.** Über einer
   Schwelle startet kein neuer Task, sondern wandert in die Warteschlange (D11). Eine
   Anzeige, die man ignoriert, verhindert keinen überladenen Server.
 
-- **H8** `[vorschlag]` **Watchdog für sensible Pfade.** Ändert eine Session
+- **H8** `[plan]` **Watchdog für sensible Pfade.** Ändert eine Session
   `wp-config.php`, `.env`, `.htaccess`, `composer.json`, `package.json` oder etwas
   unter `.github/workflows/`, kommt sofort ein Hinweis — unabhängig vom Task-Ende.
   Kurze Liste, und genau die Dateien, bei denen ein stiller Fehler teuer wird.
-- **H9** `[vorschlag]` **Laufzeit je Task** erfassen — **nötig, nicht optional**:
+- **H9** `[plan]` **Laufzeit je Task** erfassen — **nötig, nicht optional**:
   Zeiterfassung ist in Plane ein Pro-Feature, die Community Edition hat sie nicht.
   Und die echte Session-Laufzeit kennt ohnehin nur ClaudeDeck.
-- **H10** `[vorschlag]` **Token-Kosten je Task, Projekt und Monat.** Fällt mit dem
+- **H10** `[plan]` **Token-Kosten je Task, Projekt und Monat.** Fällt mit dem
   Limit aus B14 zusammen — wer kappen will, muss ohnehin zählen.
 
-- **H11** `[vorschlag]` **Verbrauch pro Session** neben dem Gesamtwert: RAM, CPU,
+- **H11** `[plan]` **Verbrauch pro Session** neben dem Gesamtwert: RAM, CPU,
   Laufzeit je tmux-Session. „Server bei 90 %" sagt nichts — „`task-WEB-42` nimmt
   6 GB" sagt, was zu killen ist. Das ist die Frage, die man bei Last tatsächlich hat.
-- **H12** `[vorschlag]` **Kurzer Verlauf statt Momentwert** (Sparkline über die letzten
+- **H12** `[plan]` **Kurzer Verlauf statt Momentwert** (Sparkline über die letzten
   Minuten). Bei 90 % ist der Unterschied zwischen „steigt" und „fällt gerade ab" die
   ganze Information.
 
@@ -322,13 +322,13 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **I4** `[umbau]` `config.rs`: `config_path`/`load_from`/`save_to` wandern
   serverseitig. Das `Config`-Struct bleibt unverändert — 5 Call-Sites in
   `src-tauri/src/commands/`.
-- **I5** `[vorschlag]` **Backup der Serverdaten** (Config, Projekt-Metadaten, Historie,
+- **I5** `[plan]` **Backup der Serverdaten** (Config, Projekt-Metadaten, Historie,
   Transkripte). Liegt alles nur auf einem Homelab-Server, und genau das war der Punkt
   der Architektur. Ohne Backup ist ein Plattenausfall der Totalverlust.
-- **I6** `[vorschlag]` **Health-Endpoint / Status im Client**: läuft das Backend, läuft
+- **I6** `[plan]` **Health-Endpoint / Status im Client**: läuft das Backend, läuft
   der Dispatcher, wann kam der letzte Webhook an. Ein stillgelegter Dispatcher fällt
   sonst erst auf, wenn ein Task stundenlang nicht anläuft.
-- **I7** `[vorschlag]` **Dispatcher unter eigenem Benutzer** mit Zugriff nur auf
+- **I7** `[plan]` **Dispatcher unter eigenem Benutzer** mit Zugriff nur auf
   `/srv/projects/`, nicht als root. Er nimmt Daten aus dem Internet an — das ist die
   exponierteste Komponente.
 
@@ -336,26 +336,26 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   Host/Port, SSH-Key und Host-Key-Fingerprint. Lokal = Arbeitsumgebung liegt auf dem
   Gerät, dortige Ablage erlaubt. `config.rs` bekommt dafür ein Trait `ConfigStore` mit
   `LocalStore` und `RemoteStore`; das `Config`-Struct bleibt für beide dasselbe.
-- **I9** `[vorschlag]` **Read-only-Weboberfläche für unterwegs.** Sobald Push aufs
+- **I9** `[plan]` **Read-only-Weboberfläche für unterwegs.** Sobald Push aufs
   Handy läuft (H3), will man darauf reagieren können: Status sehen, Permission-Prompt
   beantworten, Task freigeben. Das ist der einzige Grund, der später doch eine
   HTTPS-API rechtfertigt — dann aber additiv neben SSH, nicht als Ersatz.
 
-- **I10** `[vorschlag]` **Disk-Watchdog mit Schwelle und Auto-Cleanup.** Autonome
+- **I10** `[plan]` **Disk-Watchdog mit Schwelle und Auto-Cleanup.** Autonome
   Sessions produzieren `node_modules`, Builds, Transkripte und Archive. Ist die Platte
   voll, scheitert alles auf schwer deutbare Weise — ein Schreibfehler mitten im Task
   sieht nicht nach Platzmangel aus. Alte Worktrees automatisch wegräumen.
-- **I11** `[vorschlag]` **Wiederanlauf nach Server-Reboot.** tmux-Sessions überleben
+- **I11** `[plan]` **Wiederanlauf nach Server-Reboot.** tmux-Sessions überleben
   ihn nicht; beim ersten Kernel-Update sind alle laufenden Tasks spurlos weg. Braucht
   den Task-Status serverseitig plus systemd-Hook beim Hochfahren, der offene Tasks
   wieder anstößt oder in Plane als unterbrochen markiert.
-- **I12** `[vorschlag]` **Setup-Script für den Server** (Backend, Dispatcher,
+- **I12** `[plan]` **Setup-Script für den Server** (Backend, Dispatcher,
   systemd-Units, Verzeichnisse, rclone-Remotes). Sonst ist die Installation ein
   Blogpost im Kopf, und nach einem Ausfall rekonstruierst du sie aus Erinnerung.
-- **I13** `[vorschlag]` **Rechteebene für mehrere Nutzer** — offene Architekturfrage.
+- **I13** `[plan]` **Rechteebene für mehrere Nutzer** — offene Architekturfrage.
   Wenn später ein Subunternehmer oder Praktikant dazukommt: wer darf welche Projekte
   sehen, wer darf Tasks starten, wer sieht die Credentials (A9). Nachträglich teuer.
-- **I14** `[vorschlag]` **Auto-Update des Clients** (Tauri-Updater). Du baust `.msi`
+- **I14** `[plan]` **Auto-Update des Clients** (Tauri-Updater). Du baust `.msi`
   und portable `.exe` in CI; ohne Update-Mechanismus läuft auf dem Rechner dauerhaft
   eine alte Version, während das Backend weiterzieht.
 
@@ -373,11 +373,11 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   App-spezifische Passwörter werden abgelehnt, und Advanced Data Protection muss
   ausgeschaltet sein — ein Sicherheits-Downgrade des gesamten Apple-Kontos für ein
   Archiv. Apple hat den Zugang mehrfach gebrochen. Für Automatisiertes unbrauchbar.
-- **J5** `[vorschlag]` **Verschlüsselung vor dem Upload** (`rclone crypt` oder `age`).
+- **J5** `[plan]` **Verschlüsselung vor dem Upload** (`rclone crypt` oder `age`).
   Sieht der Anbieter nur Chiffrat, ist der Drittlandtransfer praktisch entschärft und
   OneDrive/SharePoint/Drive datenschutzrechtlich fast gleichgültig. Der Schlüssel
   liegt beim Server und **niemals mit im Archiv**.
-- **J6** `[vorschlag]` Default-Ziel Nextcloud self-hosted oder Hetzner Storage Box
+- **J6** `[plan]` Default-Ziel Nextcloud self-hosted oder Hetzner Storage Box
   (EU, AVV unkompliziert). US-Dienste nur zusammen mit J5.
 - **J7** `[plan]` **Manifest und Doku neben das Archiv, nicht hinein.** Liegt die Doku
   im Tarball, muss das Dashboard jedes Archiv entpacken, nur um Name und Beschreibung
@@ -389,15 +389,15 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **J9** `[plan]` **Archiv-Dashboard**: alle Archive mit Namen und Doku, ohne Entpacken
 - **J10** `[plan]` **1-Click reaktivieren**: herunterladen, entpacken, Pfad
   wiederherstellen, Session starten. Setzt J8 voraus.
-- **J11** `[vorschlag]` **Git-Repo und Tarball nicht verwechseln.** Hat das Projekt ein
+- **J11** `[plan]` **Git-Repo und Tarball nicht verwechseln.** Hat das Projekt ein
   Remote, ist „pushen und Ordner löschen" das Archiv — vollständig und durchsuchbar.
   Der Tarball ist für das, was *nicht* in Git liegt: Uploads, Assets, `.env`-Vorlagen,
   lokale Datenbanken. Beides anbieten, aber getrennt benennen, sonst entstehen Archive,
   die die Historie doppelt und die Uploads vergessen.
-- **J12** `[vorschlag]` Integritätsprüfung beim Reaktivieren gegen die Checksumme aus J8
-- **J13** `[vorschlag]` **Archiv-Test quartalsweise**: ein Archiv probeweise
+- **J12** `[plan]` Integritätsprüfung beim Reaktivieren gegen die Checksumme aus J8
+- **J13** `[plan]` **Archiv-Test quartalsweise**: ein Archiv probeweise
   reaktivieren. Ein nie getestetes Archiv ist kein Archiv, sondern eine Hoffnung.
-- **J14** `[vorschlag]` Aufbewahrungsfrist je Projekt. Kundenprojekte mit
+- **J14** `[plan]` Aufbewahrungsfrist je Projekt. Kundenprojekte mit
   personenbezogenen Daten gehören nicht unbegrenzt ins Archiv.
 
 ## K — Claude-Funktionen in der Oberfläche
@@ -408,47 +408,47 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **K3** `[plan]` **Welche Agents aktiv sind.** Haken: Subagents laufen *innerhalb* der
   Claude-Session und sind von außen nicht sichtbar — über tmux oder die Prozessliste
   nicht ermittelbar. Geht nur aus dem Transkript, **braucht also B13**.
-- **K4** `[vorschlag]` Skills-Übersicht, analog K2
-- **K5** `[vorschlag]` **MCP-Connector-Status** (verbunden / fehlgeschlagen / Auth
+- **K4** `[plan]` Skills-Übersicht, analog K2
+- **K5** `[plan]` **MCP-Connector-Status** (verbunden / fehlgeschlagen / Auth
   nötig). Ein nicht verbundener Connector scheitert sonst stumm mitten im Task, und
   die Session wirkt nur unerklärlich unfähig.
-- **K6** `[vorschlag]` **Permission-Prompts in der Oberfläche beantworten** statt im
+- **K6** `[plan]` **Permission-Prompts in der Oberfläche beantworten** statt im
   Terminal zu suchen, welche von acht Sessions gerade fragt. Direkte Ergänzung zu B12.
 
 - **K7** `[plan]` **Inventur je Server**: welche Skills, Agents, Slash-Commands,
   MCP-Connectors und Plugins dort installiert sind. `catalog/` scannt Commands und
   Connectors bereits (K1) — Skills (`~/.claude/skills/`, `.claude/skills/`) und Agents
   sind dieselbe Mechanik.
-- **K8** `[vorschlag]` **Abgleich über alle Server.** Das eigentliche Problem ist nicht
+- **K8** `[plan]` **Abgleich über alle Server.** Das eigentliche Problem ist nicht
   die Liste, sondern der Drift: Server A hat einen Skill, B nicht, derselbe Task
   verhält sich unterschiedlich und man sucht den Fehler im Code. Anzeigen, was wo
   fehlt, plus Sync-Knopf. Relevant ab dem zweiten Verbindungsprofil (A3).
-- **K9** `[vorschlag]` **Claude-Code-Version je Server sichtbar.** `claude_invocation`
+- **K9** `[plan]` **Claude-Code-Version je Server sichtbar.** `claude_invocation`
   baut `--model` und `--effort` in den Startbefehl; fehlt ein Flag in einer älteren
   Version, scheitert der Session-Start mit einer Meldung, die nicht nach einer
   Versionsdifferenz aussieht. Sichtbare Version erspart die Suche in tmux und SSH.
-- **K10** `[vorschlag]` **Soll-Ist-Abgleich je Projekt.** Das Projekt-`CLAUDE.md`
+- **K10** `[plan]` **Soll-Ist-Abgleich je Projekt.** Das Projekt-`CLAUDE.md`
   deklariert, welche Skills und MCP-Connectors es braucht; beim Session-Start wird
   geprüft, ob sie auf diesem Server vorhanden sind. Verhindert Tasks, die scheitern,
   weil ein Connector fehlt — was ohne K5 stumm passiert.
 
 ## L — Bedienung & Navigation (QoL)
 
-- **L1** `[vorschlag]` **Command Palette** (Strg+K): Projekt wechseln, Session öffnen,
+- **L1** `[plan]` **Command Palette** (Strg+K): Projekt wechseln, Session öffnen,
   Task anlegen, Archiv suchen — alles über eine Eingabe. Ab etwa 15 Projekten ist
   Klicken verloren.
-- **L2** `[vorschlag]` **Globale Suche** über Transkripte (B13), Projekte,
+- **L2** `[plan]` **Globale Suche** über Transkripte (B13), Projekte,
   Wissensbasis und Archiv-Manifeste. „Wie habe ich das damals gelöst" ist die
   häufigste Frage an so ein System und derzeit unbeantwortbar.
-- **L3** `[vorschlag]` Hotkeys für den Sessionwechsel (Strg+1…9)
-- **L4** `[vorschlag]` **Mini-Preview in der Sidebar**: die letzten zwei Zeilen je
+- **L3** `[plan]` Hotkeys für den Sessionwechsel (Strg+1…9)
+- **L4** `[plan]` **Mini-Preview in der Sidebar**: die letzten zwei Zeilen je
   Session. Bei acht parallelen Sessions sieht man ohne Klick, welche arbeitet und
   welche wartet. Billig, weil der Output ohnehin durchläuft.
-- **L5** `[vorschlag]` **Split-View**: zwei Sessions gleichzeitig sichtbar. Beim
+- **L5** `[plan]` **Split-View**: zwei Sessions gleichzeitig sichtbar. Beim
   Vergleichen zweier Tasks oder Terminal neben Diff.
-- **L6** `[vorschlag]` **Notizfeld je Projekt und Session**, serverseitig. „Hier war
+- **L6** `[plan]` **Notizfeld je Projekt und Session**, serverseitig. „Hier war
   ich stehengeblieben" — das, was man sonst in eine Textdatei schreibt und verliert.
-- **L7** `[vorschlag]` **Tagesstart-Ansicht**: was nachts gelaufen ist, was auf Review
+- **L7** `[plan]` **Tagesstart-Ansicht**: was nachts gelaufen ist, was auf Review
   wartet, was hängt, was heute fertig wurde. Bei „Rechner zu, Arbeit läuft" ist das
   die erste Ansicht, die man morgens braucht. Konkretisiert H5.
 
@@ -458,24 +458,24 @@ Der Loop reagiert auf Tasks. Dieser Bereich **erzeugt** sie — wiederkehrende A
 die bei Kundenbetreuung den größeren Teil ausmacht und gerade deshalb vergessen wird.
 Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
 
-- **M1** `[vorschlag]` **Geplante Tasks pro Projekt** — **nötig, nicht optional**:
+- **M1** `[plan]` **Geplante Tasks pro Projekt** — **nötig, nicht optional**:
   wiederkehrende Work Items sind in Plane erst ab Pro verfügbar, die Community Edition
   kann sie nicht. Also Cron plus API im Dispatcher. Inhalte: WordPress-Core- und
   Plugin-Updates prüfen, Backup-Verifikation, Broken Links, Core Web Vitals. Ergebnis
   als Plane-Task mit Befund, nicht als stiller Cron-Lauf.
-- **M2** `[vorschlag]` **Ablauf-Überwachung**: SSL-Zertifikate, Domains, API-Tokens
+- **M2** `[plan]` **Ablauf-Überwachung**: SSL-Zertifikate, Domains, API-Tokens
   (A11). Alles mit Datum, das unbemerkt verfällt und dann am Wochenende auffällt.
-- **M3** `[vorschlag]` **Dependency- und CVE-Prüfung** je Projekt (`composer audit`,
+- **M3** `[plan]` **Dependency- und CVE-Prüfung** je Projekt (`composer audit`,
   `npm audit`, WordPress-Plugin-Schwachstellen). Befund als Task, nicht als Mail,
   die man wegklickt.
-- **M4** `[vorschlag]` **PHP-/Runtime-EOL-Warnung**: welches Projekt läuft auf einer
+- **M4** `[plan]` **PHP-/Runtime-EOL-Warnung**: welches Projekt läuft auf einer
   Version, die aus der Sicherheitswartung fällt. Mit Vorlauf, nicht am Stichtag.
-- **M5** `[vorschlag]` **Projekt-Health-Übersicht** — gehört zwingend hierher, weil
+- **M5** `[plan]` **Projekt-Health-Übersicht** — gehört zwingend hierher, weil
   Dashboards in Plane ein Pro-Feature sind: pro Projekt letzter Commit,
   offene Tasks, veraltete Dependencies, Runtime-EOL, SSL-Ablauf, letzte
   Backup-Prüfung. Zeigt, welcher Kunde Aufmerksamkeit braucht — statt es zu merken,
   wenn er anruft.
-- **M6** `[vorschlag]` **Wartungsbericht je Kunde**, monatlich, aus M1–M5. Was geprüft,
+- **M6** `[plan]` **Wartungsbericht je Kunde**, monatlich, aus M1–M5. Was geprüft,
   was gefunden, was behoben wurde. Belegt Arbeit, die sonst unsichtbar bleibt.
 
 
@@ -484,22 +484,22 @@ Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
 Der Loop endet derzeit bei „PR offen". Alles danach — Staging, Prüfung, Live — ist
 Handarbeit. Dieser Bereich schließt ihn.
 
-- **N1** `[vorschlag]` **Pflicht-Checks vor dem PR**: die schnellen Prüfungen des
+- **N1** `[plan]` **Pflicht-Checks vor dem PR**: die schnellen Prüfungen des
   Projekts (Linter, Typecheck, Tests, falls vorhanden). Niemals durch Abschalten eines
   Tests grün machen — gehört als Regel ins `CLAUDE.md`-Template (C3).
-- **N2** `[vorschlag]` **Smoke-Test statt Unit-Tests, wo keine existieren.** Bei
+- **N2** `[plan]` **Smoke-Test statt Unit-Tests, wo keine existieren.** Bei
   Kundenseiten ist „keine Tests" der Normalfall. Realistisch: Seite antwortet mit 200,
   kein PHP-Fatal im Log, kritische Routen erreichbar, Formular rendert. Fängt das
   meiste, kostet eine Konfigurationsdatei je Projekt.
-- **N3** `[vorschlag]` **Visual Regression für Frontend-Änderungen** (Playwright,
+- **N3** `[plan]` **Visual Regression für Frontend-Änderungen** (Playwright,
   Screenshot vorher/nachher). Fängt genau die Fehler, die bei CSS- und Theme-Arbeit
   entstehen und die kein Test findet.
-- **N4** `[vorschlag]` **Staging-Deploy als Task-Abschluss** (`wp-cli`, rsync):
+- **N4** `[plan]` **Staging-Deploy als Task-Abschluss** (`wp-cli`, rsync):
   Task fertig → Staging → Smoke-Test → Review → Live. Der eigentliche Abschluss des
   Loops, und der größte einzelne Block in diesem Dokument.
-- **N5** `[vorschlag]` **Rollback-Knopf**: ein Deploy zurück, mit Datenbank-Dump
+- **N5** `[plan]` **Rollback-Knopf**: ein Deploy zurück, mit Datenbank-Dump
   davor. Ohne das traut man dem automatischen Deploy nie.
-- **N6** `[vorschlag]` **Zeit- und Wartungsfenster je Projekt.** Kein Deploy
+- **N6** `[plan]` **Zeit- und Wartungsfenster je Projekt.** Kein Deploy
   freitagabends, kein Update während der Geschäftszeiten des Kunden, rechenintensive
   Tasks nachts. Pro Projekt konfigurierbar.
 
@@ -507,32 +507,32 @@ Handarbeit. Dieser Bereich schließt ihn.
 
 Der Dispatcher ist ein Webhook-Receiver — weitere Quellen kosten fast nichts.
 
-- **O1** `[vorschlag]` **Monitoring-Alert → Task mit Erstdiagnose.** Uptime-Check
+- **O1** `[plan]` **Monitoring-Alert → Task mit Erstdiagnose.** Uptime-Check
   schlägt an, die Session prüft sofort Logs, Statuscode, Zertifikat, Disk und
   Prozesse und schreibt den Befund in den Task. Bis du aufs Handy schaust, steht
   dort, was los ist. Der nützlichste Punkt in diesem Bereich.
-- **O2** `[vorschlag]` **E-Mail → Task.** Kundenmail an eine Projektadresse wird ein
+- **O2** `[plan]` **E-Mail → Task.** Kundenmail an eine Projektadresse wird ein
   Plane-Task mit Zusammenfassung. Vorsicht: Mailinhalte sind ungeprüfte Fremdeingabe
   und dürfen keine Aktion auslösen, nur einen Task anlegen.
-- **O3** `[vorschlag]` **SEO-Monitoring → Task.** Ranking- oder Indexierungseinbruch
+- **O3** `[plan]` **SEO-Monitoring → Task.** Ranking- oder Indexierungseinbruch
   (Search Console API, eigenes Rank-Tracking) wird ein Task mit Analyse statt einer
   Mail, die man wegklickt.
-- **O4** `[vorschlag]` Formular oder Kundenportal als Quelle — erst sinnvoll, wenn
+- **O4** `[plan]` Formular oder Kundenportal als Quelle — erst sinnvoll, wenn
   I13 (Rechteebene) steht.
 
 ## P — Datenschutz & Nachweise
 
-- **P1** `[vorschlag]` **Verarbeitungsverzeichnis je Projekt**: welche
+- **P1** `[plan]` **Verarbeitungsverzeichnis je Projekt**: welche
   personenbezogenen Daten, Rechtsgrundlage, Empfänger, Löschfrist. Brauchst du für
   Kundenprojekte ohnehin; an einem Ort gepflegt beantwortet es sich in Minuten statt
   in Stunden. Gehört ins Projekt-Template (C11).
-- **P2** `[vorschlag]` **Task-Vorlage für Löschanfragen** (Art. 17): wo liegen Daten
+- **P2** `[plan]` **Task-Vorlage für Löschanfragen** (Art. 17): wo liegen Daten
   dieses Betroffenen, was wird gelöscht, was bleibt aus Aufbewahrungspflicht, Protokoll
   der Erledigung.
-- **P3** `[vorschlag]` **Aufbewahrungsfristen zentral**: Transkripte (B13), Audit-Log
+- **P3** `[plan]` **Aufbewahrungsfristen zentral**: Transkripte (B13), Audit-Log
   (H4), Archive (J14), Logs. Ohne bewusste Frist sammelt das System unbegrenzt
   Kundendaten — und genau das ist der Vorwurf, der am leichtesten zu vermeiden ist.
-- **P4** `[vorschlag]` **TDDDG-Check im Projekt-Template**: bei jedem Projekt mit
+- **P4** `[plan]` **TDDDG-Check im Projekt-Template**: bei jedem Projekt mit
   Tracking, Embeds oder LocalStorage-Nutzung ein Consent-Gate als Pflichtpunkt, bevor
   der Task als fertig gilt.
 
@@ -543,44 +543,44 @@ abfragen, Task anlegen — vom Handy, ohne etwas zu öffnen. Ein Chat-Dienst bri
 Transport, Identität, Push und Clients für alle Plattformen mit; macht I9 (eigene
 Weboberfläche) damit voraussichtlich überflüssig.
 
-- **Q1** `[vorschlag]` **Matrix self-hosted** als primäre Anbindung — **Conduit, nicht
+- **Q1** `[plan]` **Matrix self-hosted** als primäre Anbindung — **Conduit, nicht
   Synapse**: Synapse ist Python und belegt je nach Last 500 MB bis über 1 GB, Conduit
   ist Rust und liegt eine Größenordnung darunter. Für einen Raum mit einem Bot reicht
   Conduit vollauf. Eigener Server, EU, Element als Client überall, Threads von Natur aus.
   Haken: E2E mit Bots ist fummelig (Megolm-Keys, Device-Verification) — auf dem
   eigenen Server ist ein unverschlüsselter Raum meist vertretbar, weil kein Dritter
   mitliest. **Empfehlung.**
-- **Q2** `[vorschlag]` **Telegram** als einfachste Variante: die Bot-API lässt sich per
+- **Q2** `[plan]` **Telegram** als einfachste Variante: die Bot-API lässt sich per
   Long-Polling abfragen, der Server braucht also keinen eingehenden Port (passt zu V5,
   A8). Haken: Bots können keine E2E-Chats, alle Nachrichten liegen im Klartext auf
   Telegram-Servern (Dubai/UK, weltweit verteilt). Durch den Kanal laufen Dateipfade,
   Logs, Kundennamen und Task-Titel — Drittlandtransfer mit unklarer Rechtsgrundlage.
   Nur mit Q10 (Inhaltsfilter), oder für Projekte ohne personenbezogene Daten.
-- **Q3** `[vorschlag]` **ntfy** (= H3) für reine Pushes, self-hosted. Kann
+- **Q3** `[plan]` **ntfy** (= H3) für reine Pushes, self-hosted. Kann
   Action-Buttons mit HTTP-Aufruf — damit ist eine einfache Freigabe („erlauben /
   ablehnen") ohne vollen Chat-Bot möglich. Guter Zwischenschritt.
-- **Q4** `[vorschlag]` **Ein Thread je Task.** Fortschritt, Rückfragen und Ergebnis
+- **Q4** `[plan]` **Ein Thread je Task.** Fortschritt, Rückfragen und Ergebnis
   laufen im selben Thread wie die Startmeldung. Entspricht D10 im Chat statt in Plane
   und ist unterwegs besser lesbar als eine Task-Historie.
-- **Q5** `[vorschlag]` **Permission-Prompts per Chat beantworten.** Löst B12
+- **Q5** `[plan]` **Permission-Prompts per Chat beantworten.** Löst B12
   (hängende Session) dort, wo es wehtut: unterwegs. Entspricht K6 für den Fall, dass
   der Rechner zu ist — und das ist bei dieser Architektur der Normalfall.
-- **Q6** `[vorschlag]` Task freigeben, abbrechen oder zurückstellen per Chat
+- **Q6** `[plan]` Task freigeben, abbrechen oder zurückstellen per Chat
   (Gegenstück zu D9, Plan-First).
-- **Q7** `[vorschlag]` **Neuen Task per Chat anlegen** → wird ein Plane-Task. Die
+- **Q7** `[plan]` **Neuen Task per Chat anlegen** → wird ein Plane-Task. Die
   Idee unterwegs landet im System statt im Kopf.
-- **Q8** `[vorschlag]` Status abfragen: was läuft, was hängt, was wartet auf Review
+- **Q8** `[plan]` Status abfragen: was läuft, was hängt, was wartet auf Review
   (H5/L7 als Chat-Antwort).
-- **Q9** `[vorschlag]` **Absender-Allowlist und getrennte Befehlsklassen.** Ein Bot,
+- **Q9** `[plan]` **Absender-Allowlist und getrennte Befehlsklassen.** Ein Bot,
   der Befehle annimmt, ist ein Fernzugriff auf den Server — kompromittierter
   Chat-Account heißt kompromittierter Server. Lesen frei, Freigaben erlaubt,
   **niemals freie Shell-Befehle per Chat**. „Führe aus: `<text>`" wird nicht gebaut,
   so praktisch es unterwegs klingt.
-- **Q10** `[vorschlag]` **Inhaltsfilter ausgehend**: keine Secret-Werte, keine
+- **Q10** `[plan]` **Inhaltsfilter ausgehend**: keine Secret-Werte, keine
   Kundendaten, keine vollständigen Logs in den Chat. Bei einem Fremdhoster (Q2)
   zwingend, bei Matrix self-hosted guter Stil — Chat-Historien werden lange
   aufbewahrt und auf Geräten gespiegelt.
-- **Q11** `[vorschlag]` Entscheidung: Chat **statt** I9 (Weboberfläche). Beides zu
+- **Q11** `[plan]` Entscheidung: Chat **statt** I9 (Weboberfläche). Beides zu
   bauen wäre doppelte Arbeit für denselben Zweck.
 - **Q12** `[plan]` **Einstellungsseite für den Bot**: welche Funktionen er überhaupt
   hat — Auslastung anzeigen, Sessions starten/stoppen, Benachrichtigungen, Freigaben,
@@ -614,15 +614,15 @@ Weboberfläche) damit voraussichtlich überflüssig.
   Nachricht, ignorierst du den Kanal nach drei Tagen — und damit auch die Meldung, die
   zählt. Schaltbar mindestens: Task-Start, Task-Ende, Fehler, hängend (B12),
   Auslastungsschwelle (H7), Deploy (N4), sensibler Pfad (H8).
-- **Q16** `[vorschlag]` **Ruhezeiten mit Ausnahmeliste**: nachts nur Fehler und
+- **Q16** `[plan]` **Ruhezeiten mit Ausnahmeliste**: nachts nur Fehler und
   kritische Schwellen, der Rest wartet bis morgens (ergänzt L7, Tagesstart).
-- **Q17** `[vorschlag]` **Projekt-zu-Raum-Zuordnung**: welches Projekt meldet in
+- **Q17** `[plan]` **Projekt-zu-Raum-Zuordnung**: welches Projekt meldet in
   welchen Raum. Ein Raum je Kunde hält Kundenprojekte getrennt — und verhindert, dass
   in einem Kundenraum Meldungen anderer Projekte auftauchen.
-- **Q18** `[vorschlag]` **Testnachricht aus der Einstellungsseite.** Prüft Anbindung,
+- **Q18** `[plan]` **Testnachricht aus der Einstellungsseite.** Prüft Anbindung,
   Raum-ID und Rechte in einem Klick. Ohne das merkt man eine falsche Konfiguration erst,
   wenn die erste wichtige Meldung nicht ankommt.
-- **Q19** `[vorschlag]` **Chat-Befehle ins Audit-Log** (H4): wer hat wann was per Chat
+- **Q19** `[plan]` **Chat-Befehle ins Audit-Log** (H4): wer hat wann was per Chat
   ausgelöst. Bei einem Kanal, der Sessions starten kann, ist das die Mindestspur.
 
 
@@ -646,15 +646,15 @@ Weboberfläche) damit voraussichtlich überflüssig.
 - **R4** `[plan]` **Abhängigkeiten melden statt stumm leer bleiben.** B13
   (Transkripte) ist Voraussetzung für K3, B18, L2 und H10; ist B13 aus, sagen diese
   Module das. Dieselbe Logik wie K5/K10, angewandt auf die eigenen Module.
-- **R5** `[vorschlag]` **Dashboard aus Widgets zusammenstellen**: welche Panels, in
+- **R5** `[plan]` **Dashboard aus Widgets zusammenstellen**: welche Panels, in
   welcher Reihenfolge, welche Größe. Kandidaten sind die Übersichten aus den anderen
   Bereichen — Auslastung (H6), Sessions (B18), Tagesstart (L7), Projekt-Health (M5),
   Archiv (J9), offene Reviews (C7), Ablaufwarnungen (M2).
-- **R6** `[vorschlag]` **Profile für Modulsätze**, z. B. „nur Terminal" (minimal, wie
+- **R6** `[plan]` **Profile für Modulsätze**, z. B. „nur Terminal" (minimal, wie
   heute), „Betrieb" (plus Wartung, Auslastung, Chat), „alles". Erspart das
   Einzelklicken bei Neuinstallation und macht einen schlanken Modus für den
   Lokal-Betrieb (I8) möglich.
-- **R7** `[vorschlag]` **Was wirklich RAM kostet, sichtbar machen**: Sessions,
+- **R7** `[plan]` **Was wirklich RAM kostet, sichtbar machen**: Sessions,
   PM-Tool, Matrix-Server. Die einzigen wirksamen Hebel sind D11 (Parallelitäts-Limit)
   und H7 (Auslastung als Bremse) — ein abgeschaltetes Modul bringt vielleicht 20 MB,
   eine Session mehr kostet das Hundertfache. Gehört als Satz in die Oberfläche, damit
@@ -691,15 +691,43 @@ Bereiche dieser Liste.
 
 ---
 
-## Meine fünf wichtigsten Vorschläge
+## Reihenfolge
 
-Nach Verhältnis von Aufwand zu verhindertem Schmerz:
+Alles beschlossen — damit ist die Staffelung die ganze verbleibende Entscheidung.
+Sie ist so gebaut, dass **nach Stufe 2 etwas Benutzbares läuft**; alles danach
+verbessert einen laufenden Betrieb statt einen halben Bau.
 
-1. **B12** Hängende Session erkennen — häufigstes reales Problem, Erkennung fast schon da
-2. **C6** Permission-Modus pro Projekt — Sicherheit, und später schwer nachzurüsten
-3. **B14** Laufzeit-Limit mit Kill — verhindert die unangenehme Rechnung
-4. **E5** Secret-Leak-Scan — ein Hook, ein realer Vektor geschlossen
-5. **C7** Review-Gate — kein autonomer Push in Kundenprojekte
+**Stufe 1 — Fundament.** V1–V3, V7 · I1, I2, **R2** · I4, A4-Rückbau, I8 · A5
+Begründung: R2 (Capability-Handshake) zuerst, weil er alles Weitere einzeln baubar
+macht. Ohne ihn müssen Client und Backend im Gleichschritt wachsen.
+
+**Stufe 2 — Der Loop.** C2, C3, C11 · B11 · D1, D1a, D2–D5 · D6, D7 · N1, N2 · C7 ·
+D8, D10
+Ab hier: Issue anlegen → Session im Worktree → Checks → PR → Statusmeldung zurück.
+Das ist das Produkt im Kleinen.
+
+**Stufe 3 — Aufsicht.** **B13** · B12 · C6 · B14, D11 · H6, H11, H12, H7 · E5, H8 ·
+B19 · I10, I11, I7
+B13 zuerst in dieser Stufe, weil K3, B18, L2 und H10 darauf aufbauen. Das ist die
+Stufe, die nach der ersten Woche echten Betriebs fehlt.
+
+**Stufe 4 — Unterwegs.** Q3 als Einstieg · Q1, Q4–Q8 · Q9, **Q14**, Q12, Q13, Q15 ·
+Q16–Q19 · H3
+Q14 entwirft das Rollenmodell, aus dem später I13 gespeist wird — nicht zweimal bauen.
+
+**Stufe 5 — Betrieb & Auslieferung.** M1–M6 · O1 · N3–N6 · M2–M4
+M1 und M2 könnten auch vorgezogen werden: sie brauchen keinen Dispatcher und liefern
+früh Nutzen. Wenn Stufe 1–2 zu lange dauern, hier anfangen.
+
+**Stufe 6 — Wissen & Archiv.** F1–F8 · C8, C10 · J1–J3, J5–J14 · L2 · B18
+
+**Stufe 7 — Komfort & Rest.** L1, L3–L7 · K2, K7–K10, K4–K6 · G2, G4–G6 · A9–A12 ·
+P1–P4 · I12–I14, I9/Q11 · R1, R3–R7 · C9, C12, D9, E6, E7, F5, F6
+
+Zur Größenordnung, offen gesagt: Das sind rund 170 noch zu bauende Funktionen für
+eine Person. Als Mehrjahresvorhaben ist das machbar, als Projekt mit Fertigstellungs-
+termin nicht. Deshalb die Schnittstelle nach Stufe 2 — ab dort ist es ein Werkzeug,
+das sich benutzt, während es wächst.
 
 ## Offene Fragen
 
