@@ -127,6 +127,11 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
 - **B18** `[plan]` **Session-Übersicht aktiv/inaktiv + Session-Archiv pro Projekt.**
   Das Archiv sind die mitgeschriebenen Transkripte — setzt B13 voraus, sonst ist nach
   Session-Ende nichts mehr da, was man archivieren könnte.
+- **B19** `[vorschlag]` **Kill-Switch**: alle Sessions auf einmal stoppen. Bei einer
+  entgleisten Session will man einen Knopf, nicht acht Terminals durchklicken.
+- **B20** `[vorschlag]` Session umbenennen aus der Oberfläche, ohne tmux-Kommando
+- **B21** `[vorschlag]` Terminal-Ausgabe als Datei exportieren — zum Weitergeben eines
+  Fehlers, ohne aus dem Scrollback zu kopieren
 
 ## C — Projekte
 
@@ -192,11 +197,6 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   Team, Notifications, Milestones). Das ist vollständig Plane; Milestones heißen
   dort Cycles/Modules. Nachbauen = Plane in Rust neu schreiben.
 
-- **B19** `[vorschlag]` **Kill-Switch**: alle Sessions auf einmal stoppen. Bei einer
-  entgleisten Session will man einen Knopf, nicht acht Terminals durchklicken.
-- **B20** `[vorschlag]` Session umbenennen aus der Oberfläche, ohne tmux-Kommando
-- **B21** `[vorschlag]` Terminal-Ausgabe als Datei exportieren — zum Weitergeben eines
-  Fehlers, ohne aus dem Scrollback zu kopieren
 
 ## E — Secrets & Tokens
 
@@ -320,6 +320,28 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   Host/Port, SSH-Key und Host-Key-Fingerprint. Lokal = Arbeitsumgebung liegt auf dem
   Gerät, dortige Ablage erlaubt. `config.rs` bekommt dafür ein Trait `ConfigStore` mit
   `LocalStore` und `RemoteStore`; das `Config`-Struct bleibt für beide dasselbe.
+- **I9** `[vorschlag]` **Read-only-Weboberfläche für unterwegs.** Sobald Push aufs
+  Handy läuft (H3), will man darauf reagieren können: Status sehen, Permission-Prompt
+  beantworten, Task freigeben. Das ist der einzige Grund, der später doch eine
+  HTTPS-API rechtfertigt — dann aber additiv neben SSH, nicht als Ersatz.
+
+- **I10** `[vorschlag]` **Disk-Watchdog mit Schwelle und Auto-Cleanup.** Autonome
+  Sessions produzieren `node_modules`, Builds, Transkripte und Archive. Ist die Platte
+  voll, scheitert alles auf schwer deutbare Weise — ein Schreibfehler mitten im Task
+  sieht nicht nach Platzmangel aus. Alte Worktrees automatisch wegräumen.
+- **I11** `[vorschlag]` **Wiederanlauf nach Server-Reboot.** tmux-Sessions überleben
+  ihn nicht; beim ersten Kernel-Update sind alle laufenden Tasks spurlos weg. Braucht
+  den Task-Status serverseitig plus systemd-Hook beim Hochfahren, der offene Tasks
+  wieder anstößt oder in Plane als unterbrochen markiert.
+- **I12** `[vorschlag]` **Setup-Script für den Server** (Backend, Dispatcher,
+  systemd-Units, Verzeichnisse, rclone-Remotes). Sonst ist die Installation ein
+  Blogpost im Kopf, und nach einem Ausfall rekonstruierst du sie aus Erinnerung.
+- **I13** `[vorschlag]` **Rechteebene für mehrere Nutzer** — offene Architekturfrage.
+  Wenn später ein Subunternehmer oder Praktikant dazukommt: wer darf welche Projekte
+  sehen, wer darf Tasks starten, wer sieht die Credentials (A9). Nachträglich teuer.
+- **I14** `[vorschlag]` **Auto-Update des Clients** (Tauri-Updater). Du baust `.msi`
+  und portable `.exe` in CI; ohne Update-Mechanismus läuft auf dem Rechner dauerhaft
+  eine alte Version, während das Backend weiterzieht.
 
 ## J — Archiv & Archivierung
 
@@ -376,11 +398,6 @@ Projekt, V5 mit dem Dispatcher, V6 mit dem Archiv. V7 sobald V2 steht.
   die Session wirkt nur unerklärlich unfähig.
 - **K6** `[vorschlag]` **Permission-Prompts in der Oberfläche beantworten** statt im
   Terminal zu suchen, welche von acht Sessions gerade fragt. Direkte Ergänzung zu B12.
-
-- **I9** `[vorschlag]` **Read-only-Weboberfläche für unterwegs.** Sobald Push aufs
-  Handy läuft (H3), will man darauf reagieren können: Status sehen, Permission-Prompt
-  beantworten, Task freigeben. Das ist der einzige Grund, der später doch eine
-  HTTPS-API rechtfertigt — dann aber additiv neben SSH, nicht als Ersatz.
 
 - **K7** `[plan]` **Inventur je Server**: welche Skills, Agents, Slash-Commands,
   MCP-Connectors und Plugins dort installiert sind. `catalog/` scannt Commands und
@@ -442,23 +459,6 @@ Der Dispatcher legt die Tasks selbst in Plane an und arbeitet sie ab.
 - **M6** `[vorschlag]` **Wartungsbericht je Kunde**, monatlich, aus M1–M5. Was geprüft,
   was gefunden, was behoben wurde. Belegt Arbeit, die sonst unsichtbar bleibt.
 
-- **I10** `[vorschlag]` **Disk-Watchdog mit Schwelle und Auto-Cleanup.** Autonome
-  Sessions produzieren `node_modules`, Builds, Transkripte und Archive. Ist die Platte
-  voll, scheitert alles auf schwer deutbare Weise — ein Schreibfehler mitten im Task
-  sieht nicht nach Platzmangel aus. Alte Worktrees automatisch wegräumen.
-- **I11** `[vorschlag]` **Wiederanlauf nach Server-Reboot.** tmux-Sessions überleben
-  ihn nicht; beim ersten Kernel-Update sind alle laufenden Tasks spurlos weg. Braucht
-  den Task-Status serverseitig plus systemd-Hook beim Hochfahren, der offene Tasks
-  wieder anstößt oder in Plane als unterbrochen markiert.
-- **I12** `[vorschlag]` **Setup-Script für den Server** (Backend, Dispatcher,
-  systemd-Units, Verzeichnisse, rclone-Remotes). Sonst ist die Installation ein
-  Blogpost im Kopf, und nach einem Ausfall rekonstruierst du sie aus Erinnerung.
-- **I13** `[vorschlag]` **Rechteebene für mehrere Nutzer** — offene Architekturfrage.
-  Wenn später ein Subunternehmer oder Praktikant dazukommt: wer darf welche Projekte
-  sehen, wer darf Tasks starten, wer sieht die Credentials (A9). Nachträglich teuer.
-- **I14** `[vorschlag]` **Auto-Update des Clients** (Tauri-Updater). Du baust `.msi`
-  und portable `.exe` in CI; ohne Update-Mechanismus läuft auf dem Rechner dauerhaft
-  eine alte Version, während das Backend weiterzieht.
 
 ## N — Qualitätssicherung & Auslieferung
 
