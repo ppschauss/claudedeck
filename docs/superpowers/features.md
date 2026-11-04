@@ -543,8 +543,10 @@ abfragen, Task anlegen — vom Handy, ohne etwas zu öffnen. Ein Chat-Dienst bri
 Transport, Identität, Push und Clients für alle Plattformen mit; macht I9 (eigene
 Weboberfläche) damit voraussichtlich überflüssig.
 
-- **Q1** `[vorschlag]` **Matrix self-hosted** (Synapse oder Conduit) als primäre
-  Anbindung. Eigener Server, EU, Element als Client überall, Threads von Natur aus.
+- **Q1** `[vorschlag]` **Matrix self-hosted** als primäre Anbindung — **Conduit, nicht
+  Synapse**: Synapse ist Python und belegt je nach Last 500 MB bis über 1 GB, Conduit
+  ist Rust und liegt eine Größenordnung darunter. Für einen Raum mit einem Bot reicht
+  Conduit vollauf. Eigener Server, EU, Element als Client überall, Threads von Natur aus.
   Haken: E2E mit Bots ist fummelig (Megolm-Keys, Device-Verification) — auf dem
   eigenen Server ist ein unverschlüsselter Raum meist vertretbar, weil kein Dritter
   mitliest. **Empfehlung.**
@@ -622,6 +624,41 @@ Weboberfläche) damit voraussichtlich überflüssig.
   wenn die erste wichtige Meldung nicht ankommt.
 - **Q19** `[vorschlag]` **Chat-Befehle ins Audit-Log** (H4): wer hat wann was per Chat
   ausgelöst. Bei einem Kanal, der Sessions starten kann, ist das die Mindestspur.
+
+
+## R — Modularität & Dashboard
+
+- **R1** `[plan]` **Module einzeln ab- und zuschaltbar** (Chat-Bot, SFTP, Archiv,
+  Wartung, Transkripte, Auslastung …). **Nicht wegen RAM** — Backend und Dispatcher
+  sind Rust und belegen mit allen Funktionen wenige MB. Die drei echten Gründe:
+  - **Angriffsfläche**: Chat-Bot aus = kein Fernzugriff, SFTP aus = kein Dateizugriff.
+    Jede aktive Funktion ist Code, der auf Eingaben wartet.
+  - **Bedienbarkeit**: 189 Funktionen in einer Oberfläche sind unbenutzbar.
+  - **Baubarkeit**: einzeln aktivierbare Module lassen sich einzeln bauen und
+    benutzen, statt auf ein fertiges Ganzes zu warten. Der eigentliche Gewinn.
+- **R2** `[plan]` **Capability-Handshake**: das Backend meldet dem Client, welche
+  Module es hat und welche aktiv sind; der Client rendert nur die. Ein halb fertiges
+  Backend funktioniert damit mit einem neueren Client ohne Fehler, und das Abschalten
+  wirkt automatisch in der Oberfläche. Gehört zu I2 (JSON-Kommandos über SSH).
+- **R3** `[plan]` **Abschalten darf keine Daten verlieren.** Modul aus heißt Dienst
+  aus, nicht Daten weg — SFTP aus und wieder an, und die Pfad-Lesezeichen (G6) sind
+  noch da.
+- **R4** `[plan]` **Abhängigkeiten melden statt stumm leer bleiben.** B13
+  (Transkripte) ist Voraussetzung für K3, B18, L2 und H10; ist B13 aus, sagen diese
+  Module das. Dieselbe Logik wie K5/K10, angewandt auf die eigenen Module.
+- **R5** `[vorschlag]` **Dashboard aus Widgets zusammenstellen**: welche Panels, in
+  welcher Reihenfolge, welche Größe. Kandidaten sind die Übersichten aus den anderen
+  Bereichen — Auslastung (H6), Sessions (B18), Tagesstart (L7), Projekt-Health (M5),
+  Archiv (J9), offene Reviews (C7), Ablaufwarnungen (M2).
+- **R6** `[vorschlag]` **Profile für Modulsätze**, z. B. „nur Terminal" (minimal, wie
+  heute), „Betrieb" (plus Wartung, Auslastung, Chat), „alles". Erspart das
+  Einzelklicken bei Neuinstallation und macht einen schlanken Modus für den
+  Lokal-Betrieb (I8) möglich.
+- **R7** `[vorschlag]` **Was wirklich RAM kostet, sichtbar machen**: Sessions,
+  PM-Tool, Matrix-Server. Die einzigen wirksamen Hebel sind D11 (Parallelitäts-Limit)
+  und H7 (Auslastung als Bremse) — ein abgeschaltetes Modul bringt vielleicht 20 MB,
+  eine Session mehr kostet das Hundertfache. Gehört als Satz in die Oberfläche, damit
+  man nicht am falschen Ende sucht.
 
 
 ## Abgrenzung: was ein PM-Tool abdeckt
